@@ -1,0 +1,3459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Info Reader v3</title>
+    <style>
+        :root {
+            --bg: #161616;
+            --panel: #222;
+            --panel-2: #2b2b2b;
+            --border: #3a3a3a;
+            --text: #eee;
+            --muted: #999;
+            --accent: #4a9eff;
+            --comfy: #9b6bff;
+            --a1111: #2ecc71;
+            --manual: #f1c40f;
+            --none: #e67e22;
+            --thumb: 180px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 14px;
+            display: flex;
+            flex-direction: column;
+        }
+        button, select, input, textarea { font: inherit; color: inherit; }
+        .hidden { display: none !important; }
+
+        /* ---------- Header / folders ---------- */
+        .header {
+            background: var(--panel);
+            border-bottom: 2px solid var(--accent);
+            padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .header-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .header h1 { color: var(--accent); font-size: 20px; margin-right: auto; }
+        .folder-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .folder-row .label { color: var(--muted); font-size: 13px; }
+        .folder-btn {
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+            display: inline-flex; gap: 6px; align-items: center;
+        }
+        .folder-btn:hover { border-color: var(--accent); }
+        .folder-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .folder-btn .cached { font-size: 11px; opacity: .8; }
+        .hint { color: var(--muted); font-style: italic; font-size: 13px; }
+
+        .btn {
+            background: var(--accent);
+            border: none;
+            color: #fff;
+            border-radius: 6px;
+            padding: 7px 14px;
+            cursor: pointer;
+            display: inline-flex; gap: 6px; align-items: center;
+            white-space: nowrap;
+        }
+        .btn:hover { filter: brightness(1.1); }
+        .btn:disabled { background: #555; cursor: not-allowed; filter: none; }
+        .btn.secondary { background: var(--panel-2); border: 1px solid var(--border); }
+        .btn.danger { background: #c0392b; }
+        .btn.small { padding: 4px 10px; font-size: 12px; }
+
+        /* ---------- Filter bar ---------- */
+        .filters {
+            position: sticky; top: 0; z-index: 5;
+            background: #1d1d1d;
+            border-bottom: 1px solid var(--border);
+            padding: 10px 16px;
+            display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+        }
+        .filters input[type=search] {
+            flex: 1 1 260px;
+            min-width: 200px;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 7px 10px;
+        }
+        .filters select {
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 8px;
+            max-width: 260px;
+        }
+        .filters input:focus, .filters select:focus { outline: 1px solid var(--accent); }
+        .filters .size { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
+        .filters .count { color: var(--muted); font-size: 12px; margin-left: auto; }
+
+        /* ---------- Grid ---------- */
+        main { flex: 1; overflow-y: auto; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(var(--thumb), 1fr));
+            gap: 10px;
+            padding: 14px 16px 30px;
+        }
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: border-color .15s, transform .15s;
+        }
+        .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .card:focus-visible { outline: 2px solid var(--accent); }
+        .thumb {
+            position: relative;
+            aspect-ratio: 1;
+            background: #111;
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden;
+        }
+        .thumb img, .thumb video {
+            width: 100%; height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .thumb video.hover-preview { position: absolute; inset: 0; }
+        .thumb .placeholder { font-size: 34px; opacity: .35; }
+        .badges {
+            position: absolute; top: 6px; left: 6px;
+            display: flex; gap: 4px;
+        }
+        .badge {
+            background: rgba(0,0,0,.72);
+            border-radius: 5px;
+            padding: 2px 5px;
+            font-size: 13px;
+            line-height: 1.2;
+            border: 1px solid transparent;
+        }
+        .badge.comfy { border-color: var(--comfy); }
+        .badge.a1111 { border-color: var(--a1111); }
+        .badge.manual { border-color: var(--manual); }
+        .badge.none { border-color: var(--none); }
+        .badge.pending { opacity: .6; }
+        .duration {
+            position: absolute; right: 6px; bottom: 6px;
+            background: rgba(0,0,0,.75);
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-size: 12px;
+            font-variant-numeric: tabular-nums;
+        }
+        .cap { padding: 6px 8px; }
+        .cap .name { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cap .sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 14px; }
+
+        .empty {
+            grid-column: 1 / -1;
+            text-align: center;
+            color: var(--muted);
+            padding: 80px 20px;
+        }
+        .empty h3 { color: var(--text); margin-bottom: 8px; }
+
+        /* ---------- Status bar ---------- */
+        .status {
+            background: var(--panel);
+            border-top: 1px solid var(--border);
+            padding: 6px 16px;
+            font-size: 12px;
+            color: var(--muted);
+            display: flex; gap: 12px; align-items: center;
+        }
+        .status .bar { flex: 0 0 160px; height: 4px; background: #333; border-radius: 2px; overflow: hidden; }
+        .status .bar div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+
+        /* ---------- Detail panel ---------- */
+        .overlay {
+            position: fixed; inset: 0; z-index: 50;
+            background: rgba(0,0,0,.8);
+            display: flex; align-items: stretch; justify-content: center;
+            padding: 2vh 2vw;
+        }
+        .detail {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            width: 100%;
+            max-width: 1600px;
+            display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+        .detail-head {
+            display: flex; gap: 10px; align-items: center;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            background: var(--panel-2);
+        }
+        .detail-head .title { flex: 1; min-width: 0; }
+        .detail-head .title .fname { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .detail-head .title .fmeta { font-size: 12px; color: var(--muted); }
+        .icon-btn {
+            background: transparent; border: 1px solid var(--border);
+            border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 16px;
+        }
+        .icon-btn:hover { border-color: var(--accent); }
+        .icon-btn:disabled { opacity: .3; cursor: default; }
+        .source-tag {
+            border-radius: 12px; padding: 2px 10px; font-size: 12px; font-weight: 600;
+            border: 1px solid var(--border); white-space: nowrap;
+        }
+        .source-tag.comfy { border-color: var(--comfy); color: var(--comfy); }
+        .source-tag.a1111 { border-color: var(--a1111); color: var(--a1111); }
+        .source-tag.manual { border-color: var(--manual); color: var(--manual); }
+        .source-tag.none { border-color: var(--none); color: var(--none); }
+        .detail-body { flex: 1; display: flex; min-height: 0; }
+        .media-pane {
+            flex: 1 1 55%;
+            background: #0c0c0c;
+            display: flex; align-items: center; justify-content: center;
+            min-width: 0;
+        }
+        .media-pane img, .media-pane video { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+        .media-pane .placeholder { color: var(--muted); text-align: center; padding: 20px; }
+        .info-pane {
+            flex: 0 0 min(560px, 45%);
+            overflow-y: auto;
+            padding: 14px 16px 30px;
+            border-left: 1px solid var(--border);
+        }
+        .field { margin-bottom: 12px; }
+        .field-head {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+            margin-bottom: 4px;
+        }
+        .field-head .lbl { flex: 1; }
+        .copy-btn {
+            background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
+            padding: 1px 8px; font-size: 11px; cursor: pointer; text-transform: none; letter-spacing: 0;
+        }
+        .copy-btn:hover { border-color: var(--accent); }
+        .copy-btn.ok { border-color: var(--a1111); color: var(--a1111); }
+        .copy-btn:disabled { opacity: .3; cursor: default; }
+        .value {
+            background: #1a1a1a; border: 1px solid #2e2e2e; border-radius: 6px;
+            padding: 7px 10px;
+            white-space: pre-wrap; word-break: break-word;
+            font-size: 13px; line-height: 1.45;
+        }
+        .value.prompt { max-height: 260px; overflow-y: auto; }
+        .value.empty-val { color: #666; }
+        .value.mono, .loras .lname { font-family: Consolas, 'Courier New', monospace; font-size: 12px; }
+        .params { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
+        .params .field { margin-bottom: 0; }
+        .loras { display: flex; flex-direction: column; gap: 4px; }
+        .loras .lrow { display: flex; gap: 10px; align-items: center; }
+        .loras .lname { flex: 1; word-break: break-all; }
+        .loras .lstr { color: var(--accent); font-variant-numeric: tabular-nums; }
+        .section-title {
+            font-size: 12px; color: var(--accent); font-weight: 600;
+            margin: 18px 0 8px; padding-top: 10px; border-top: 1px solid var(--border);
+        }
+        details.raw { margin-bottom: 8px; border: 1px solid var(--border); border-radius: 6px; }
+        details.raw summary { cursor: pointer; padding: 7px 10px; display: flex; gap: 8px; align-items: center; }
+        details.raw summary span { flex: 1; }
+        details.raw summary { list-style: none; }
+        details.raw summary::-webkit-details-marker { display: none; }
+        details.raw summary::before { content: '▸'; color: var(--muted); }
+        details.raw[open] summary::before { content: '▾'; }
+        details.raw pre {
+            max-height: 420px; overflow: auto;
+            padding: 10px; border-top: 1px solid var(--border);
+            font-size: 11px; font-family: Consolas, 'Courier New', monospace; color: #cfcfcf;
+        }
+        .notice { color: var(--muted); font-size: 13px; padding: 10px; border: 1px dashed var(--border); border-radius: 6px; }
+
+        @media (max-width: 900px) {
+            .detail-body { flex-direction: column; overflow-y: auto; }
+            .media-pane { flex: 0 0 auto; max-height: 50vh; }
+            .media-pane img, .media-pane video { max-height: 50vh; }
+            .info-pane { flex: 1 0 auto; border-left: none; border-top: 1px solid var(--border); overflow: visible; }
+        }
+
+        /* ---------- Modal (folders) ---------- */
+        .modal-box {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            width: min(620px, 100%);
+            align-self: center;
+            max-height: 90vh;
+            display: flex; flex-direction: column;
+        }
+        .modal-box header { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
+        .modal-box header h2 { font-size: 17px; flex: 1; }
+        .modal-box .body { padding: 16px; overflow-y: auto; }
+        .modal-box footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+        .folder-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+        .folder-item {
+            display: flex; align-items: center; gap: 8px;
+            background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
+        }
+        .folder-item .fi-name { flex: 1; }
+        .folder-item .fi-meta { font-size: 11px; color: var(--muted); }
+        .add-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .add-row input {
+            flex: 1; min-width: 180px;
+            background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px;
+        }
+        .picked { margin-top: 8px; font-size: 12px; color: var(--muted); }
+        h4 { font-size: 13px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
+
+        .detail-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .drag-handle {
+            border: 1px dashed var(--border); border-radius: 6px; padding: 3px 10px;
+            font-size: 12px; cursor: grab; user-select: none; color: var(--muted); white-space: nowrap;
+        }
+        .drag-handle:hover { border-color: var(--accent); color: var(--text); }
+        .media-pane[draggable=true] { cursor: grab; }
+        .media-pane[draggable=true] video { cursor: auto; }
+        #infoOverlay { z-index: 60; }
+        #infoOverlay .modal-box { width: min(760px, 100%); }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+        .frm { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+        .frm label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+        .frm input, .frm textarea, .lora-edit input {
+            background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; width: 100%;
+        }
+        .frm textarea { resize: vertical; min-height: 64px; line-height: 1.4; }
+        .frm input:focus, .frm textarea:focus, .lora-edit input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+        .lora-edit { display: flex; gap: 6px; margin-bottom: 6px; }
+        .lora-edit .ls { width: 80px; flex: 0 0 80px; }
+        .form-section { font-size: 12px; color: var(--accent); font-weight: 600; margin: 6px 0 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+        details.paste { border: 1px dashed var(--border); border-radius: 6px; padding: 8px 10px; margin-bottom: 14px; }
+        details.paste summary { cursor: pointer; color: var(--muted); }
+        details.paste textarea { margin-top: 8px; min-height: 90px; font-family: Consolas, 'Courier New', monospace; font-size: 12px; }
+        .wf-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+        .form-where { font-size: 12px; color: var(--muted); margin-right: auto; align-self: center; }
+        .info-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+        .info-actions .hint-text { font-size: 12px; color: var(--muted); }
+        .value a { color: var(--accent); word-break: break-all; }
+        .menu-wrap { position: relative; }
+        .menu {
+            position: absolute; right: 0; top: calc(100% + 4px); z-index: 70;
+            background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+            min-width: 300px; padding: 4px; display: flex; flex-direction: column;
+            box-shadow: 0 8px 24px rgba(0,0,0,.5);
+        }
+        .menu button {
+            background: none; border: none; text-align: left; padding: 8px 10px; border-radius: 5px;
+            cursor: pointer; display: flex; flex-direction: column; gap: 2px;
+        }
+        .menu button:hover:not(:disabled), .menu button:focus-visible { background: #383838; outline: none; }
+        .menu button:disabled { opacity: .45; cursor: default; }
+        .menu small { color: var(--muted); font-size: 11px; }
+        .toast.error { border-color: #c0392b; background: #3a1f1c; }
+        .toast.ok { border-color: var(--a1111); }
+        .toast {
+            position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+            background: #333; border: 1px solid var(--border); border-radius: 6px;
+            padding: 8px 16px; z-index: 100; font-size: 13px;
+            transition: opacity .3s;
+            max-width: min(640px, 92vw); text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-top">
+            <h1>🔍 AI Info Reader v3</h1>
+            <button id="rescanBtn" class="btn secondary" disabled title="Re-read the current folder from disk">↻ Rescan</button>
+            <button id="manageBtn" class="btn">📂 Manage Folders</button>
+        </div>
+        <div class="folder-row" id="folderRow"></div>
+    </div>
+
+    <div class="filters">
+        <input type="search" id="searchInput" placeholder="Search prompts, models, LoRAs, file names…">
+        <select id="typeFilter" title="File type">
+            <option value="all">All types</option>
+            <option value="image">🖼️ Images</option>
+            <option value="video">🎬 Videos</option>
+        </select>
+        <select id="metaFilter" title="Metadata">
+            <option value="all">Any metadata</option>
+            <option value="has">Has metadata</option>
+            <option value="none">⚠️ No metadata</option>
+            <option value="comfy">⚙️ ComfyUI</option>
+            <option value="a1111">📝 A1111 / Forge / Swarm</option>
+            <option value="manual">✍️ Manual (sidecar)</option>
+            <option value="notes">🗒️ Has my notes</option>
+        </select>
+        <select id="modelFilter" title="Model">
+            <option value="">All models</option>
+        </select>
+        <select id="sortSelect" title="Sort">
+            <option value="name">Name A→Z</option>
+            <option value="new">Newest first</option>
+            <option value="old">Oldest first</option>
+            <option value="size">Largest first</option>
+        </select>
+        <label class="size">Size <input type="range" id="sizeRange" min="110" max="360" step="10" value="180"></label>
+        <span class="count" id="countText"></span>
+    </div>
+
+    <main id="main">
+        <div class="grid" id="grid">
+            <div class="empty">
+                <h3>No folder loaded</h3>
+                <p>Click “📂 Manage Folders” to add a folder, then click its button above to load it.</p>
+            </div>
+        </div>
+    </main>
+
+    <div class="status">
+        <span id="statusText" style="flex:1">Ready</span>
+        <div class="bar hidden" id="progressBar"><div id="progressFill"></div></div>
+    </div>
+
+    <!-- Hidden folder picker (Firefox / no File System Access API) -->
+    <input type="file" id="folderInput" webkitdirectory multiple class="hidden">
+
+    <!-- Detail panel -->
+    <div class="overlay hidden" id="detailOverlay">
+        <div class="detail" role="dialog" aria-modal="true" aria-labelledby="detailName">
+            <div class="detail-head">
+                <button class="icon-btn" id="prevBtn" title="Previous (←)">‹</button>
+                <button class="icon-btn" id="nextBtn" title="Next (→)">›</button>
+                <div class="title">
+                    <div class="fname" id="detailName"></div>
+                    <div class="fmeta" id="detailMeta"></div>
+                </div>
+                <div class="detail-actions">
+                    <button class="btn small secondary" id="copyMediaBtn" title="Copy as a PNG picture (Ctrl+C)">📋 Copy image</button>
+                    <button class="btn small secondary" id="saveCopyBtn" title="Save an exact copy of the original file">💾 Save copy as…</button>
+                    <div class="menu-wrap">
+                        <button class="btn small secondary" id="exportBtn" aria-haspopup="menu" aria-expanded="false" title="Export new files — the original is never changed">⬇ Export ▾</button>
+                        <div class="menu hidden" id="exportMenu" role="menu">
+                            <button role="menuitem" data-export="workflow">⚙️ Workflow (.json)<small></small></button>
+                            <button role="menuitem" data-export="settings">📄 Settings (.json + .txt)<small></small></button>
+                            <button role="menuitem" data-export="clean">🧼 Clean copy (metadata stripped)<small></small></button>
+                            <button role="menuitem" data-export="embed">🖼️ PNG with info embedded<small></small></button>
+                        </div>
+                    </div>
+                    <span class="drag-handle" id="dragHandle" draggable="true" title="Drag onto the desktop or an Explorer window to drop the original file">⠿ Drag file</span>
+                </div>
+                <span class="source-tag" id="detailSource"></span>
+                <button class="icon-btn" id="closeDetail" title="Close (Esc)">✕</button>
+            </div>
+            <div class="detail-body">
+                <div class="media-pane" id="mediaPane"></div>
+                <div class="info-pane" id="infoPane"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add / edit manual info (sidecar) -->
+    <div class="overlay hidden" id="infoOverlay">
+        <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="infoFormTitle">
+            <header>
+                <div style="flex:1; min-width:0">
+                    <h2 id="infoFormTitle">✍️ Add info</h2>
+                    <div class="hint" id="infoFormFile" style="font-style:normal; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"></div>
+                </div>
+                <button class="icon-btn" data-close>✕</button>
+            </header>
+            <div class="body">
+                <div class="notice hidden" id="fNotesOnlyHint" style="margin-bottom:14px">
+                    This file has its own embedded metadata, which always takes priority. You can add a source link and notes alongside it.
+                </div>
+                <details class="paste gen-only" id="fPasteBox">
+                    <summary>📋 Paste generation data (Civitai / A1111 text, or ComfyUI JSON) to fill the form</summary>
+                    <textarea id="fPaste" placeholder="a castle on a hill, ...&#10;Negative prompt: ...&#10;Steps: 30, Sampler: DPM++ 2M, Schedule type: Karras, CFG scale: 7, Seed: 42, Model: ..."></textarea>
+                    <div style="margin-top:8px"><button class="btn small" id="fPasteFill">Fill fields</button></div>
+                </details>
+                <div class="gen-only">
+                    <div class="frm"><label for="fModel">Model</label><input id="fModel" type="text" autocomplete="off"></div>
+                    <div class="frm"><label>LoRAs (name / strength)</label><div id="fLoras"></div>
+                        <div><button class="btn small secondary" id="fAddLora" type="button">＋ Add LoRA</button></div></div>
+                    <div class="frm"><label for="fPositive">Positive prompt</label><textarea id="fPositive" rows="4"></textarea></div>
+                    <div class="frm"><label for="fNegative">Negative prompt</label><textarea id="fNegative" rows="2"></textarea></div>
+                    <div class="form-grid">
+                        <div class="frm"><label for="fSeed">Seed</label><input id="fSeed" type="text" inputmode="numeric" autocomplete="off"></div>
+                        <div class="frm"><label for="fSteps">Steps</label><input id="fSteps" type="text" inputmode="numeric" autocomplete="off"></div>
+                        <div class="frm"><label for="fCfg">CFG</label><input id="fCfg" type="text" inputmode="decimal" autocomplete="off"></div>
+                        <div class="frm"><label for="fSampler">Sampler</label><input id="fSampler" type="text" autocomplete="off"></div>
+                        <div class="frm"><label for="fScheduler">Scheduler</label><input id="fScheduler" type="text" autocomplete="off"></div>
+                    </div>
+                </div>
+                <div class="form-section">Source &amp; notes</div>
+                <div class="frm"><label for="fSourceUrl">Source URL</label><input id="fSourceUrl" type="url" placeholder="https://civitai.com/images/…" autocomplete="off"></div>
+                <div class="frm"><label for="fNotes">Notes</label><textarea id="fNotes" rows="3"></textarea></div>
+                <div class="gen-only">
+                    <div class="form-section">Workflow (optional)</div>
+                    <div class="wf-row">
+                        <span id="fWfStatus">No workflow attached.</span>
+                        <button class="btn small secondary" id="fWfPick" type="button">📎 Attach workflow.json…</button>
+                        <button class="btn small secondary hidden" id="fWfFill" type="button">Fill fields from it</button>
+                        <button class="btn small secondary hidden" id="fWfRemove" type="button">Remove</button>
+                    </div>
+                    <input type="file" id="fWfInput" accept=".json,application/json" class="hidden">
+                </div>
+            </div>
+            <footer>
+                <span class="form-where" id="fWhere"></span>
+                <button class="btn danger hidden" id="fDelete">🗑️ Remove info</button>
+                <button class="btn secondary" data-close>Cancel</button>
+                <button class="btn" id="fSave" title="Ctrl+Enter">💾 Save</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Manage folders -->
+    <div class="overlay hidden" id="foldersOverlay">
+        <div class="modal-box" role="dialog" aria-modal="true">
+            <header><h2>📂 Manage Folders</h2><button class="icon-btn" data-close>✕</button></header>
+            <div class="body">
+                <h4>Saved folders</h4>
+                <div class="folder-list" id="folderList"></div>
+                <h4>Add a folder</h4>
+                <div class="add-row">
+                    <input type="text" id="newFolderName" placeholder="Name (e.g. ComfyUI output)">
+                    <button class="btn secondary" id="browseBtn">📁 Browse…</button>
+                    <button class="btn" id="saveFolderBtn">💾 Save</button>
+                </div>
+                <div class="picked hidden" id="pickedText"></div>
+                <div id="importV2Wrap" class="hidden" style="margin-top:18px">
+                    <h4>From AI Image Info Pro v2</h4>
+                    <button class="btn secondary" id="importV2Btn">⇪ Import saved folders from v2</button>
+                </div>
+            </div>
+            <footer><button class="btn secondary" data-close>Close</button></footer>
+        </div>
+    </div>
+
+    <script id="aiMetaModule">
+        // Copied from AIIMAGEINFOPROV2.html (metadata readers + ComfyUI/A1111 parsing).
+        // Only change: extract() also returns samplerName and scheduler as separate fields.
+        const AIMeta = (() => {
+            const VIDEO_EXT = ['.mp4', '.mov', '.m4v', '.webm'];
+            const MB = 1024 * 1024;
+            const utf8 = new TextDecoder('utf-8');
+            const utf8Strict = new TextDecoder('utf-8', { fatal: true });
+            const latin1 = new TextDecoder('latin1'); // one char per byte, so string indexes == byte offsets
+
+            const extOf = name => { const i = (name || '').lastIndexOf('.'); return i >= 0 ? name.slice(i).toLowerCase() : ''; };
+            const isVideoName = name => VIDEO_EXT.includes(extOf(name));
+            const ascii = (b, s, n) => latin1.decode(b.subarray(s, s + n));
+            const startsWith = (b, str) => b.length >= str.length && ascii(b, 0, str.length) === str;
+            const dvOf = b => new DataView(b.buffer, b.byteOffset, b.byteLength);
+            const num = v => { const n = Number(v); return Number.isFinite(n) ? Number(n.toFixed(4)) : v; };
+
+            async function readBytes(file, start, end) {
+                start = Math.max(0, start); end = Math.min(file.size, end);
+                if (end <= start) return new Uint8Array(0);
+                return new Uint8Array(await file.slice(start, end).arrayBuffer());
+            }
+            function decodeText(bytes) {
+                try { return utf8Strict.decode(bytes); } catch (e) { return latin1.decode(bytes); }
+            }
+            async function inflate(bytes) { // zlib stream (PNG zTXt / compressed iTXt)
+                if (typeof DecompressionStream === 'undefined') return null;
+                try {
+                    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'));
+                    return new Uint8Array(await new Response(stream).arrayBuffer());
+                } catch (e) { return null; }
+            }
+            const add = (kv, key, value) => {
+                if (key && typeof value === 'string' && value.trim()) kv.push({ key: key.trim().toLowerCase(), value: value.replace(/\0+$/, '') });
+            };
+
+            // ---------- PNG: tEXt / iTXt / zTXt ----------
+            async function readPNG(file, kv) {
+                let pos = 8, sawText = false;
+                while (pos + 12 <= file.size) {
+                    const h = await readBytes(file, pos, pos + 8);
+                    const len = dvOf(h).getUint32(0);
+                    const type = ascii(h, 4, 4);
+                    if (type === 'IEND') break;
+                    // Generators write text chunks before the image data; stop there once we have them.
+                    if (type === 'IDAT' && sawText) break;
+                    if (type === 'tEXt' || type === 'iTXt' || type === 'zTXt') {
+                        const data = await readBytes(file, pos + 8, pos + 8 + len);
+                        if (await parsePngText(type, data, kv)) sawText = true;
+                    }
+                    pos += 12 + len;
+                }
+            }
+            async function parsePngText(type, d, kv) {
+                const z = d.indexOf(0);
+                if (z < 0) return false;
+                const key = latin1.decode(d.subarray(0, z));
+                let text = null;
+                if (type === 'tEXt') {
+                    text = decodeText(d.subarray(z + 1));
+                } else if (type === 'zTXt') {
+                    const raw = await inflate(d.subarray(z + 2));
+                    if (raw) text = decodeText(raw);
+                } else { // iTXt: key\0 flag method lang\0 translated\0 text
+                    const compressed = d[z + 1] === 1;
+                    const langEnd = d.indexOf(0, z + 3);
+                    const transEnd = langEnd < 0 ? -1 : d.indexOf(0, langEnd + 1);
+                    if (transEnd < 0) return false;
+                    let body = d.subarray(transEnd + 1);
+                    if (compressed) body = await inflate(body);
+                    if (body) text = utf8.decode(body);
+                }
+                if (text == null) return false;
+                add(kv, key, text);
+                return true;
+            }
+
+            // ---------- EXIF (TIFF) / XMP, shared by JPEG + WebP ----------
+            const EXIF_TAGS = { 0x010E: 'imagedescription', 0x010F: 'make', 0x0110: 'model', 0x013B: 'artist', 0x9286: 'usercomment', 0x9C9C: 'xpcomment' };
+            function parseTIFF(t, kv) {
+                if (t.length < 8) return;
+                const le = t[0] === 0x49;
+                const dv = dvOf(t);
+                const u16 = o => dv.getUint16(o, le), u32 = o => dv.getUint32(o, le);
+                const seen = new Set();
+                const walk = off => {
+                    if (!off || seen.has(off) || off + 2 > t.length) return;
+                    seen.add(off);
+                    const n = u16(off);
+                    for (let i = 0; i < n; i++) {
+                        const e = off + 2 + i * 12;
+                        if (e + 12 > t.length) return;
+                        const tag = u16(e), type = u16(e + 2), count = u32(e + 4);
+                        if (tag === 0x8769) { walk(u32(e + 8)); continue; } // Exif sub-IFD
+                        const name = EXIF_TAGS[tag];
+                        if (!name || ![1, 2, 7].includes(type)) continue;
+                        const start = count <= 4 ? e + 8 : u32(e + 8);
+                        if (start + count > t.length) continue;
+                        const raw = t.subarray(start, start + count);
+                        let text;
+                        if (tag === 0x9286) text = decodeUserComment(raw);
+                        else if (tag === 0x9C9C) text = new TextDecoder('utf-16le').decode(raw);
+                        else text = decodeText(raw);
+                        add(kv, name, text);
+                    }
+                };
+                walk(u32(4));
+            }
+            function decodeUserComment(raw) {
+                const prefix = latin1.decode(raw.subarray(0, 8));
+                const body = raw.subarray(8);
+                if (prefix.startsWith('UNICODE')) {
+                    // A1111 (piexif) writes UTF-16BE; some tools write LE. ASCII-heavy text tells us which.
+                    let even = 0, odd = 0;
+                    for (let i = 0; i < Math.min(body.length, 400); i++) if (body[i] === 0) (i % 2 ? odd++ : even++);
+                    return new TextDecoder(even >= odd ? 'utf-16be' : 'utf-16le').decode(body);
+                }
+                if (prefix.startsWith('ASCII') || /^\0{8}$/.test(prefix)) return decodeText(body);
+                return decodeText(raw);
+            }
+            function parseXMP(xml, kv) {
+                const unesc = s => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+                    .replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCodePoint(parseInt(h, 16)))
+                    .replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(+d)).replace(/&amp;/g, '&');
+                const wanted = /^(usercomment|parameters|description|prompt|workflow)$/i;
+                for (const m of xml.matchAll(/([\w-]+):([\w-]+)="([^"]*)"/g)) if (wanted.test(m[2])) add(kv, m[2], unesc(m[3]));
+                for (const m of xml.matchAll(/<([\w-]+):([\w-]+)[^>]*>([\s\S]*?)<\/\1:\2>/g)) {
+                    if (!wanted.test(m[2])) continue;
+                    const inner = m[3].replace(/<[^>]+>/g, '').trim();
+                    if (inner) add(kv, m[2], unesc(inner));
+                }
+            }
+            async function readJPEG(file, kv) {
+                const b = await readBytes(file, 0, 2 * MB); // EXIF/XMP/COM live in the header segments
+                let p = 2;
+                while (p + 4 <= b.length && b[p] === 0xFF) {
+                    const marker = b[p + 1];
+                    if (marker === 0xFF) { p++; continue; }
+                    if (marker === 0xD8 || marker === 0x01 || (marker >= 0xD0 && marker <= 0xD7)) { p += 2; continue; }
+                    if (marker === 0xDA || marker === 0xD9) break; // image data starts
+                    const len = (b[p + 2] << 8) | b[p + 3];
+                    const seg = b.subarray(p + 4, p + 2 + len);
+                    if (marker === 0xE1 && startsWith(seg, 'Exif\0\0')) parseTIFF(seg.subarray(6), kv);
+                    else if (marker === 0xE1 && startsWith(seg, 'http://ns.adobe.com/xap/1.0/\0')) parseXMP(utf8.decode(seg.subarray(29)), kv);
+                    else if (marker === 0xFE) add(kv, 'comment', decodeText(seg));
+                    p += 2 + len;
+                }
+            }
+            async function readWebP(file, kv) {
+                const end = file.size;
+                let pos = 12;
+                while (pos + 8 <= end) {
+                    const h = await readBytes(file, pos, pos + 8);
+                    const type = ascii(h, 0, 4), len = dvOf(h).getUint32(4, true);
+                    if (type === 'EXIF' || type === 'XMP ') {
+                        const d = await readBytes(file, pos + 8, pos + 8 + len);
+                        if (type === 'EXIF') parseTIFF(startsWith(d, 'Exif\0\0') ? d.subarray(6) : d, kv);
+                        else parseXMP(utf8.decode(d), kv);
+                    }
+                    pos += 8 + len + (len & 1);
+                }
+            }
+
+            // ---------- MP4 / MOV (ISO-BMFF): moov > [udta >] meta > keys/ilst, plus QuickTime ©xxx ----------
+            const QT_NAMES = { '©cmt': 'comment', '©des': 'description', 'desc': 'description', 'ldes': 'description', '©nam': 'title', '©too': 'encoder' };
+            function walkBoxes(b, start, end, cb) {
+                const dv = dvOf(b);
+                let p = start;
+                while (p + 8 <= end) {
+                    let size = dv.getUint32(p), hdr = 8;
+                    const type = ascii(b, p + 4, 4);
+                    if (size === 1) { if (p + 16 > end) break; size = Number(dv.getBigUint64(p + 8)); hdr = 16; }
+                    else if (size === 0) size = end - p;
+                    if (size < hdr || p + size > end) break;
+                    cb(type, p + hdr, p + size, p);
+                    p += size;
+                }
+            }
+            function parseMovBoxes(b, start, end, kv, parent) {
+                walkBoxes(b, start, end, (type, s, e) => {
+                    if (type === 'meta') {
+                        // ISO 'meta' is a FullBox (4 bytes version/flags); QuickTime's is not.
+                        parseMeta(b, ascii(b, s + 4, 4) === 'hdlr' ? s : s + 4, e, kv);
+                    } else if (type === 'moov' || type === 'udta' || type === 'trak') {
+                        parseMovBoxes(b, s, e, kv, type);
+                    } else if (parent === 'udta' && type.charCodeAt(0) === 0xA9) {
+                        if (ascii(b, s + 4, 4) === 'data') parseIlstItem(b, s, e, QT_NAMES[type] || type, kv);
+                        else if (e - s > 4) { // QuickTime text: [u16 len][u16 lang][text]
+                            const len = dvOf(b).getUint16(s);
+                            add(kv, QT_NAMES[type] || type, decodeText(b.subarray(s + 4, Math.min(e, s + 4 + len))));
+                        }
+                    }
+                });
+            }
+            function parseMeta(b, s, e, kv) {
+                const dv = dvOf(b);
+                const keys = [];
+                let ilst = null;
+                walkBoxes(b, s, e, (type, cs, ce) => {
+                    if (type === 'keys') {
+                        const count = dv.getUint32(cs + 4);
+                        let p = cs + 8;
+                        for (let i = 0; i < count && p + 8 <= ce; i++) {
+                            const sz = dv.getUint32(p);
+                            if (sz < 8) break;
+                            keys.push(decodeText(b.subarray(p + 8, p + sz)));
+                            p += sz;
+                        }
+                    } else if (type === 'ilst') ilst = [cs, ce];
+                });
+                if (!ilst) return;
+                walkBoxes(b, ilst[0], ilst[1], (type, is, ie, ip) => {
+                    const idx = dv.getUint32(ip + 4); // mdta items are numbered 1..n into the keys box
+                    const name = keys.length && idx >= 1 && idx <= keys.length ? keys[idx - 1] : (QT_NAMES[type] || type);
+                    parseIlstItem(b, is, ie, name, kv);
+                });
+            }
+            function parseIlstItem(b, s, e, name, kv) {
+                walkBoxes(b, s, e, (type, ds, de) => {
+                    if (type !== 'data' || de - ds < 8) return;
+                    const dataType = dvOf(b).getUint32(ds) & 0xFFFFFF;
+                    const val = b.subarray(ds + 8, de);
+                    if (dataType === 1 || dataType === 0) add(kv, name, decodeText(val));
+                    else if (dataType === 2) add(kv, name, new TextDecoder('utf-16be').decode(val));
+                });
+            }
+            async function readISOBMFF(file, kv) {
+                let pos = 0, guard = 0;
+                while (pos + 8 <= file.size && guard++ < 100000) {
+                    const h = await readBytes(file, pos, pos + 16);
+                    const dv = dvOf(h);
+                    let size = dv.getUint32(0), hdr = 8;
+                    const type = ascii(h, 4, 4);
+                    if (size === 1) { size = Number(dv.getBigUint64(8)); hdr = 16; }
+                    else if (size === 0) size = file.size - pos;
+                    if (size < hdr) break;
+                    if ((type === 'moov' || type === 'udta' || type === 'meta') && size < 256 * MB) {
+                        const b = await readBytes(file, pos, pos + size);
+                        parseMovBoxes(b, 0, b.length, kv, null);
+                    }
+                    pos += size;
+                }
+            }
+
+            // ---------- WebM / MKV (Matroska): Segment > Tags > Tag > SimpleTag ----------
+            const vintLen = byte => { for (let i = 0; i < 8; i++) if (byte & (0x80 >> i)) return i + 1; return 0; };
+            function parseEl(b, p) {
+                if (p >= b.length) return null;
+                const idLen = vintLen(b[p]);
+                if (!idLen || idLen > 4 || p + idLen >= b.length) return null;
+                let id = 0;
+                for (let i = 0; i < idLen; i++) id = id * 256 + b[p + i];
+                const q = p + idLen, sLen = vintLen(b[q]);
+                if (!sLen || q + sLen > b.length) return null;
+                let size = b[q] & (0xFF >> sLen), allOnes = size === (0xFF >> sLen);
+                for (let i = 1; i < sLen; i++) { size = size * 256 + b[q + i]; if (b[q + i] !== 0xFF) allOnes = false; }
+                return { id, size: allOnes ? Infinity : size, dataStart: q + sLen };
+            }
+            function parseMkvTags(b, s, e, kv) {
+                let p = s;
+                while (p < e) {
+                    const el = parseEl(b, p);
+                    if (!el) break;
+                    const ds = el.dataStart, de = Math.min(e, ds + el.size);
+                    if (el.id === 0x1254C367 || el.id === 0x7373) parseMkvTags(b, ds, de, kv); // Tags / Tag
+                    else if (el.id === 0x67C8) { // SimpleTag
+                        let name = null, value = null, q = ds;
+                        while (q < de) {
+                            const c = parseEl(b, q);
+                            if (!c) break;
+                            const cs = c.dataStart, ce = Math.min(de, cs + c.size);
+                            if (c.id === 0x45A3) name = decodeText(b.subarray(cs, ce));
+                            else if (c.id === 0x4487 || c.id === 0x4485) value = decodeText(b.subarray(cs, ce));
+                            else if (c.id === 0x67C8) parseMkvTags(b, q, ce, kv); // nested SimpleTag
+                            q = ce;
+                        }
+                        if (name && value) add(kv, name, value);
+                    }
+                    if (el.size === Infinity) break;
+                    p = de;
+                }
+            }
+            async function readMatroska(file, kv) {
+                const readEl = async pos => parseEl(await readBytes(file, pos, pos + 16), 0);
+                let el = await readEl(0); // EBML header
+                if (!el || el.size === Infinity) return;
+                const segPos = el.dataStart + el.size;
+                const seg = await readEl(segPos);
+                if (!seg || seg.id !== 0x18538067) return;
+                const segStart = segPos + seg.dataStart;
+                const segEnd = seg.size === Infinity ? file.size : Math.min(file.size, segStart + seg.size);
+                let pos = segStart, guard = 0;
+                while (pos < segEnd && guard++ < 100000) {
+                    const c = await readEl(pos);
+                    if (!c) break;
+                    const dataPos = pos + c.dataStart;
+                    if (c.id === 0x1254C367 && c.size !== Infinity) {
+                        const b = await readBytes(file, dataPos, dataPos + Math.min(c.size, 64 * MB));
+                        parseMkvTags(b, 0, b.length, kv);
+                    }
+                    if (c.size === Infinity) break; // live-style cluster: fall back to the byte scan
+                    pos = dataPos + c.size;
+                }
+            }
+
+            // ---------- Fallback: find JSON objects in raw bytes ----------
+            function matchBrace(b, start) {
+                let depth = 0, inStr = false, esc = false;
+                for (let i = start; i < b.length; i++) {
+                    const c = b[i];
+                    if (inStr) {
+                        if (esc) esc = false;
+                        else if (c === 0x5C) esc = true;
+                        else if (c === 0x22) inStr = false;
+                        else if (c < 0x20) return -1;
+                        continue;
+                    }
+                    if (c === 0x22) inStr = true;
+                    else if (c === 0x7B || c === 0x5B) depth++;
+                    else if (c === 0x7D || c === 0x5D) { if (--depth === 0) return i; }
+                    else if (c < 0x09 || (c > 0x0D && c < 0x20) || c > 0x7E) return -1; // binary outside a string: not JSON
+                }
+                return -1;
+            }
+            function scanForJSON(b, kv) {
+                const s = latin1.decode(b);
+                let i = 0;
+                while ((i = s.indexOf('{"', i)) !== -1) {
+                    const end = matchBrace(b, i);
+                    if (end > i + 50) {
+                        const text = decodeText(b.subarray(i, end + 1));
+                        let obj;
+                        try { obj = JSON.parse(text); } catch (e) { obj = undefined; }
+                        if (obj && typeof obj === 'object') { add(kv, 'scan', text); i = end + 1; continue; }
+                    }
+                    i += 2;
+                }
+            }
+
+            // ---------- Interpret raw key/values ----------
+            function guardedParse(text) {
+                // Quote integers too big for JS numbers (ComfyUI seeds go up to 2^64) so they stay exact.
+                const guarded = text.replace(/([:\[,]\s*)(-?\d{16,})(?=\s*[,\]}])/g, '$1"$2"');
+                for (const t of guarded === text ? [text] : [guarded, text]) { try { return JSON.parse(t); } catch (e) { } }
+                return undefined;
+            }
+            function looksLikeGraph(o) {
+                if (!o || typeof o !== 'object' || Array.isArray(o)) return false;
+                const vals = Object.values(o);
+                const nodes = vals.filter(n => n && typeof n === 'object' && typeof n.class_type === 'string');
+                return nodes.length > 0 && nodes.length >= vals.length * 0.8;
+            }
+            const looksLikeWorkflow = o => !!o && typeof o === 'object' && Array.isArray(o.nodes) && ('links' in o || 'last_node_id' in o || 'version' in o);
+
+            function interpret(kv) {
+                const res = { prompt: null, workflow: null, workflowText: null, parameters: null, swarm: null };
+                const visit = (key, val, raw, depth) => {
+                    if (val == null || depth > 5) return;
+                    if (typeof val === 'string') {
+                        let s = val.trim();
+                        const pre = s.match(/^(prompt|workflow)\s*:\s*(?=[{"])/i); // ComfyUI WebP/JPEG EXIF style
+                        if (pre) s = s.slice(pre[0].length);
+                        if (s[0] === '{' || s[0] === '"') {
+                            let obj;
+                            try { obj = JSON.parse(s); } catch (e) { obj = undefined; }
+                            if (obj !== undefined && obj !== s) return visit(key, obj, s, depth + 1);
+                        }
+                        if (!res.parameters && (key === 'parameters' || (/\bSteps:\s*\d+/.test(s) && /\b(Sampler|Seed|CFG scale):/.test(s)))) res.parameters = s;
+                        return;
+                    }
+                    if (typeof val !== 'object') return;
+                    if (looksLikeGraph(val)) { if (!res.prompt) res.prompt = (raw && guardedParse(raw)) || val; return; }
+                    if (looksLikeWorkflow(val)) { if (!res.workflow) { res.workflow = val; res.workflowText = raw || null; } return; }
+                    if (val.sui_image_params && !res.swarm) res.swarm = val.sui_image_params;
+                    for (const [k, v] of Object.entries(val)) {
+                        if (/^(prompt|workflow|parameters|extra_pnginfo|extra_data|comment)$/i.test(k)) visit(k.toLowerCase(), v, null, depth + 1);
+                    }
+                };
+                for (const { key, value } of kv) visit(key, value, null, 0);
+                return res;
+            }
+            const hasAny = info => !!(info.prompt || info.workflow || info.parameters || info.swarm);
+
+            async function read(file) {
+                const kv = [];
+                let container = 'unknown';
+                try {
+                    const h = await readBytes(file, 0, 16);
+                    if (h[0] === 0x89 && ascii(h, 1, 3) === 'PNG') { container = 'png'; await readPNG(file, kv); }
+                    else if (h[0] === 0xFF && h[1] === 0xD8) { container = 'jpeg'; await readJPEG(file, kv); }
+                    else if (ascii(h, 0, 4) === 'RIFF' && ascii(h, 8, 4) === 'WEBP') { container = 'webp'; await readWebP(file, kv); }
+                    else if (h[0] === 0x1A && h[1] === 0x45 && h[2] === 0xDF && h[3] === 0xA3) { container = 'matroska'; await readMatroska(file, kv); }
+                    else if (['ftyp', 'moov', 'mdat', 'free', 'wide', 'skip', 'pnot'].includes(ascii(h, 4, 4))) { container = 'isobmff'; await readISOBMFF(file, kv); }
+                } catch (e) {
+                    console.warn('Metadata read error:', file.name, e);
+                }
+                let info = interpret(kv);
+                info.container = container;
+                const isVideo = container === 'isobmff' || container === 'matroska' || isVideoName(file.name);
+                if (isVideo && !hasAny(info)) {
+                    // Box/tag parsing found nothing: scan the tail (and head) of the file for embedded JSON.
+                    try {
+                        scanForJSON(await readBytes(file, file.size - 2 * MB, file.size), kv);
+                        if (file.size > 2 * MB) scanForJSON(await readBytes(file, 0, Math.min(2 * MB, file.size - 2 * MB)), kv);
+                        info = Object.assign(interpret(kv), { container, scanned: true });
+                    } catch (e) { console.warn('Metadata scan error:', file.name, e); }
+                }
+                info.isVideo = isVideo;
+                return info;
+            }
+
+            // ---------- A1111 / Forge "parameters" ----------
+            function parseA1111(text) {
+                const lines = text.replace(/\r\n?/g, '\n').split('\n');
+                let kvIdx = -1;
+                for (let i = lines.length - 1; i >= 0; i--) if (/^\s*Steps:\s*\d+/.test(lines[i])) { kvIdx = i; break; }
+                const body = kvIdx >= 0 ? lines.slice(0, kvIdx) : lines;
+                const pos = [], neg = [];
+                let inNeg = false;
+                for (const l of body) {
+                    if (!inNeg && /^Negative prompt:/i.test(l)) { inNeg = true; neg.push(l.replace(/^Negative prompt:\s*/i, '')); }
+                    else (inNeg ? neg : pos).push(l);
+                }
+                const kv = {};
+                if (kvIdx >= 0) {
+                    for (const m of lines[kvIdx].matchAll(/\s*([^:,]+?):\s*("(?:\\.|[^\\"])*"|[^,]*)(?:,|$)/g)) {
+                        let v = m[2].trim();
+                        if (v.startsWith('"')) { try { v = JSON.parse(v); } catch (e) { } }
+                        kv[m[1].trim()] = v;
+                    }
+                }
+                const positive = pos.join('\n').trim();
+                const loras = [];
+                for (const m of positive.matchAll(/<lora:([^:>]+):([^:>]+)[^>]*>/gi)) loras.push({ name: m[1], strength: num(m[2]) });
+                const sched = kv['Schedule type'] && kv['Schedule type'] !== 'Automatic' ? kv['Schedule type'] : '';
+                const used = ['Steps', 'Sampler', 'Schedule type', 'CFG scale', 'Seed', 'Model'];
+                const extras = Object.entries(kv).filter(([k]) => !used.includes(k)).map(([k, v]) => `${k}: ${v}`);
+                return {
+                    positive,
+                    negative: neg.join('\n').trim(),
+                    checkpoint: kv['Model'] || '',
+                    loras,
+                    cfg: kv['CFG scale'] !== undefined ? num(kv['CFG scale']) : '',
+                    steps: kv['Steps'] !== undefined ? num(kv['Steps']) : '',
+                    sampler: [kv['Sampler'], sched].filter(Boolean).join(' '),
+                    samplerName: kv['Sampler'] || '', scheduler: kv['Schedule type'] || '',
+                    seed: kv['Seed'] || '',
+                    notes: extras.length ? `Other params: ${extras.join(', ')}` : ''
+                };
+            }
+
+            function parseSwarm(p) {
+                const weights = p.loraweights || [];
+                return {
+                    positive: p.prompt || '', negative: p.negativeprompt || '', checkpoint: p.model || '',
+                    loras: (p.loras || []).map((n, i) => ({ name: n, strength: num(weights[i] ?? 1) })),
+                    cfg: p.cfgscale ?? '', steps: p.steps ?? '', seed: p.seed ?? '',
+                    sampler: p.sampler ? (p.scheduler ? `${p.sampler} (${p.scheduler})` : p.sampler) : '', notes: '',
+                    samplerName: p.sampler || '', scheduler: p.scheduler || ''
+                };
+            }
+
+            // ---------- ComfyUI API-format prompt graph ----------
+            function parseComfy(graph, isVideo) {
+                const node = id => graph[String(id)];
+                const cls = id => (node(id) && node(id).class_type) || '';
+                const inputs = id => (node(id) && node(id).inputs) || {};
+                const isLink = v => Array.isArray(v) && v.length === 2 && (typeof v[0] === 'string' || typeof v[0] === 'number') && Number.isInteger(v[1]) && !!node(v[0]);
+                const VALUE_KEYS = ['value', 'string', 'text', 'int', 'float', 'number', 'seed', 'noise_seed', 'prompt', 'populated_text', 'text_input', 'STRING', 'INT', 'FLOAT', 'Text'];
+
+                // Follow a link through Reroute / Primitive / String / Int / concat nodes to a literal value.
+                function resolve(v, depth = 0) {
+                    if (!isLink(v)) return v;
+                    if (depth > 30) return undefined;
+                    const id = v[0], ins = inputs(id), ct = cls(id);
+                    if (/concat|join|combine|append/i.test(ct) && !/conditioning/i.test(ct)) {
+                        const parts = Object.entries(ins)
+                            .filter(([k]) => /^(string|text)/i.test(k) && !/delim|separator/i.test(k))
+                            .map(([, x]) => resolve(x, depth + 1)).filter(x => typeof x === 'string' && x.length);
+                        let delim = resolve(ins.delimiter ?? ins.separator, depth + 1);
+                        if (typeof delim !== 'string') delim = ' ';
+                        if (parts.length) return parts.join(delim);
+                    }
+                    for (const k of VALUE_KEYS) if (k in ins) return resolve(ins[k], depth + 1);
+                    const vals = Object.values(ins);
+                    if (vals.length === 1) return resolve(vals[0], depth + 1); // passthrough nodes
+                    return undefined;
+                }
+                function upstream(id) { // Map nodeId -> distance (BFS over all link inputs)
+                    const dist = new Map([[String(id), 0]]), q = [String(id)];
+                    while (q.length) {
+                        const cur = q.shift();
+                        for (const v of Object.values(inputs(cur))) {
+                            if (!isLink(v)) continue;
+                            const nid = String(v[0]);
+                            if (!dist.has(nid)) { dist.set(nid, dist.get(cur) + 1); q.push(nid); }
+                        }
+                    }
+                    return dist;
+                }
+
+                const ids = Object.keys(graph);
+                const SAMPLER_INPUTS = ['steps', 'seed', 'noise_seed', 'cfg', 'sigmas', 'guider', 'noise', 'latent_image', 'positive', 'text_embeds'];
+                const samplers = ids.filter(id => /sampler/i.test(cls(id)) && SAMPLER_INPUTS.filter(k => k in inputs(id)).length >= 2);
+                const saves = ids.filter(id => /save|videocombine|createvideo/i.test(cls(id)) && !/preview|lora|model|checkpoint|latent|text/i.test(cls(id)));
+                const outputs = saves.length ? saves : ids.filter(id => /preview/i.test(cls(id)));
+                const ranked = outputs.map(id => ({ id, up: upstream(id), video: /video|webm|mp4|animated|gif|combine/i.test(cls(id)) }))
+                    .sort((a, b) => (isVideo ? (b.video - a.video) : 0) || (b.up.size - a.up.size) || (Number(b.id) - Number(a.id)));
+
+                let chosen = null;
+                for (const o of ranked) {
+                    const cands = samplers.filter(s => o.up.has(s)).sort((a, b) => o.up.get(a) - o.up.get(b));
+                    if (cands.length) { chosen = cands[0]; break; } // sampler nearest the final save
+                }
+                if (!chosen && samplers.length) {
+                    const ups = new Map(samplers.map(s => [s, upstream(s)]));
+                    chosen = samplers.find(s => !samplers.some(o => o !== s && ups.get(o).has(s))) || samplers[0];
+                }
+
+                const AUX = ['noise', 'guider', 'sampler', 'sigmas', 'scheduler'];
+                function findParam(id, names, depth = 0, seen = new Set()) {
+                    if (depth > 4 || seen.has(String(id))) return undefined;
+                    seen.add(String(id));
+                    const ins = inputs(id);
+                    for (const k of names) {
+                        if (!(k in ins)) continue;
+                        const v = resolve(ins[k]);
+                        if (v !== undefined && v !== null && typeof v !== 'object') return v;
+                    }
+                    for (const k of AUX) if (isLink(ins[k])) {
+                        const r = findParam(ins[k][0], names, depth + 1, seen);
+                        if (r !== undefined) return r;
+                    }
+                    return undefined;
+                }
+                function paramsFor(id) {
+                    const name = findParam(id, ['sampler_name']), sched = findParam(id, ['scheduler']);
+                    return {
+                        seed: findParam(id, ['seed', 'noise_seed']),
+                        steps: findParam(id, ['steps']),
+                        cfg: findParam(id, ['cfg', 'cfg_scale']),
+                        sampler: name && sched ? `${name} (${sched})` : (name || sched || ''),
+                        samplerName: name ?? '', scheduler: sched ?? ''
+                    };
+                }
+
+                const TEXT_KEYS = ['populated_text', 'text', 'text_g', 'prompt', 't5xxl', 'clip_l', 'string', 'wildcard_text'];
+                function condText(link, role, depth = 0, seen = new Set()) {
+                    if (!isLink(link) || depth > 40) return [];
+                    const id = String(link[0]);
+                    if (seen.has(id)) return [];
+                    seen.add(id);
+                    const ins = inputs(id), ct = cls(id);
+                    if (/zero_?out/i.test(ct)) return [];
+                    const roleKey = role === 'negative' ? 'negative_prompt' : 'positive_prompt';
+                    if (roleKey in ins) { const t = resolve(ins[roleKey]); return typeof t === 'string' && t.trim() ? [t] : []; }
+                    for (const k of TEXT_KEYS) {
+                        if (!(k in ins)) continue;
+                        const t = resolve(ins[k]);
+                        if (typeof t !== 'string' || !t.trim()) continue;
+                        const out = [t];
+                        if (k === 'text_g') { const l = resolve(ins.text_l); if (typeof l === 'string' && l.trim() && l !== t) out.push(l); }
+                        return out;
+                    }
+                    const keys = Object.keys(ins);
+                    let follow = keys.filter(k => k === role);
+                    if (!follow.length) follow = keys.filter(k => /conditioning|^cond/i.test(k));
+                    const texts = [];
+                    for (const k of follow) if (isLink(ins[k])) texts.push(...condText(ins[k], role, depth + 1, seen));
+                    return texts;
+                }
+                function promptFor(id, role) {
+                    const ins = inputs(id);
+                    let texts = [];
+                    if (isLink(ins[role])) texts = condText(ins[role], role);
+                    else if (isLink(ins.guider)) {
+                        const g = inputs(ins.guider[0]);
+                        if (isLink(g[role])) texts = condText(g[role], role);
+                        else if (role === 'positive' && isLink(g.conditioning)) texts = condText(g.conditioning, role);
+                    } else if (isLink(ins.text_embeds)) texts = condText(ins.text_embeds, role);
+                    return [...new Set(texts)].join('\n');
+                }
+
+                const MODEL_KEYS = ['ckpt_name', 'unet_name', 'model_name', 'gguf_name', 'base_ckpt_name', 'model_path', 'model'];
+                function findModel(startId) {
+                    const seen = new Set(), q = [String(startId)];
+                    while (q.length) {
+                        const id = q.shift();
+                        if (seen.has(id) || !node(id)) continue;
+                        seen.add(id);
+                        const ins = inputs(id);
+                        if (id !== String(startId) && !/lora/i.test(cls(id))) {
+                            for (const k of MODEL_KEYS) {
+                                let v = ins[k];
+                                if (k !== 'model' && isLink(v)) v = resolve(v);
+                                if (typeof v === 'string' && v.trim() && v !== 'None') return v;
+                            }
+                        }
+                        for (const k of ['model', 'unet', 'base_model', 'guider', 'sigmas']) if (isLink(ins[k])) q.push(String(ins[k][0]));
+                    }
+                    for (const id of upstream(startId).keys()) { // fallback: any loader upstream
+                        if (!/loader/i.test(cls(id)) || /lora|clip|vae|controlnet|upscale|ipadapter|image|text/i.test(cls(id))) continue;
+                        for (const k of MODEL_KEYS) { const v = resolve(inputs(id)[k]); if (typeof v === 'string' && v.trim()) return v; }
+                    }
+                    return '';
+                }
+
+                function lorasUpstream(startId) {
+                    const up = upstream(startId);
+                    const order = [...up.keys()].sort((a, b) => up.get(b) - up.get(a)); // furthest upstream first = chain order
+                    const out = [], names = new Set();
+                    const push = (name, strength, enabled = true) => {
+                        name = resolve(name);
+                        if (!enabled || typeof name !== 'string' || !name.trim() || name === 'None') return;
+                        const s = resolve(strength);
+                        if (Number(s) === 0) return; // zero strength = effectively off
+                        if (names.has(name)) return;
+                        names.add(name);
+                        out.push({ name, strength: s === undefined || s === '' ? 1 : num(s) });
+                    };
+                    for (const id of order) {
+                        const ins = inputs(id), ct = cls(id);
+                        const keys = Object.keys(ins);
+                        const isLoraNode = /lora/i.test(ct) || keys.some(k => /^lora_\d+$/i.test(k));
+                        if (!isLoraNode) continue;
+                        if (ins.enabled === false || ins.on === false) continue;
+                        // rgthree Power Lora Loader: lora_N = { on, lora, strength, strengthTwo }
+                        const objs = keys.filter(k => /^lora_\d+$/i.test(k) && ins[k] && typeof ins[k] === 'object' && !Array.isArray(ins[k]));
+                        if (objs.length) { for (const k of objs) push(ins[k].lora, ins[k].strength ?? 1, ins[k].on !== false); continue; }
+                        // Numbered stacks (Efficiency LoRA Stacker, CR LoRA Stack, ...)
+                        const numbered = keys.map(k => k.match(/^lora_name_(\d+)$/i)).filter(Boolean);
+                        if (numbered.length) {
+                            const count = Number(resolve(ins.lora_count)) || Infinity;
+                            for (const m of numbered) {
+                                const i = m[1];
+                                if (Number(i) > count) continue;
+                                const sw = resolve(ins[`switch_${i}`]);
+                                push(ins[m[0]], ins[`lora_wt_${i}`] ?? ins[`model_weight_${i}`] ?? ins[`model_str_${i}`] ?? ins[`strength_${i}`] ?? 1, !(sw === 'Off' || sw === false));
+                            }
+                            continue;
+                        }
+                        push(ins.lora_name ?? ins.lora, ins.strength_model ?? ins.strength ?? ins.lora_strength ?? 1);
+                    }
+                    return out;
+                }
+
+                const result = { positive: '', negative: '', checkpoint: '', loras: [], cfg: '', steps: '', sampler: '', samplerName: '', scheduler: '', seed: '', notes: '' };
+                if (!chosen) { result.notes = 'ComfyUI graph found, but no sampler node was recognised.'; return result; }
+                const p = paramsFor(chosen);
+                if (resolve(inputs(chosen).add_noise) === 'disable') {
+                    // Refiner pass (e.g. Wan 2.2 low-noise) adds no noise: the meaningful seed is on the upstream pass
+                    const up = upstream(chosen);
+                    const src = samplers.filter(s => s !== chosen && up.has(s) && resolve(inputs(s).add_noise) !== 'disable')
+                        .sort((a, b) => up.get(a) - up.get(b))[0];
+                    if (src) p.seed = paramsFor(src).seed;
+                }
+                Object.assign(result, {
+                    positive: promptFor(chosen, 'positive'),
+                    negative: promptFor(chosen, 'negative'),
+                    checkpoint: findModel(chosen),
+                    loras: lorasUpstream(chosen),
+                    cfg: p.cfg ?? '', steps: p.steps ?? '', sampler: p.sampler, seed: p.seed ?? '',
+                    samplerName: p.samplerName, scheduler: p.scheduler
+                });
+                const others = samplers.filter(s => s !== chosen);
+                if (others.length) {
+                    const describe = id => {
+                        const q = paramsFor(id), ins = inputs(id), bits = [];
+                        if (q.steps !== undefined) bits.push(ins.start_at_step !== undefined ? `steps ${resolve(ins.start_at_step)}-${resolve(ins.end_at_step)} of ${q.steps}` : `steps ${q.steps}`);
+                        if (q.cfg !== undefined) bits.push(`cfg ${q.cfg}`);
+                        if (q.sampler) bits.push(q.sampler);
+                        if (q.seed !== undefined) bits.push(`seed ${q.seed}`);
+                        const m = findModel(id);
+                        if (m && m !== result.checkpoint) bits.push(`model ${m}`);
+                        return `#${id} ${cls(id)}${bits.length ? ` (${bits.join(', ')})` : ''}`;
+                    };
+                    result.notes = `Other samplers detected: ${others.map(describe).join('; ')}`;
+                }
+                return result;
+            }
+
+            // Turn read() output into Create Preset form fields. source === null means nothing usable.
+            function extract(info) {
+                const blank = { source: null, positive: '', negative: '', checkpoint: '', loras: [], cfg: '', steps: '', sampler: '', samplerName: '', scheduler: '', seed: '', notes: '' };
+                if (!info) return blank;
+                if (info.prompt) {
+                    try { return { ...blank, ...parseComfy(info.prompt, info.isVideo), source: 'ComfyUI' }; }
+                    catch (e) { console.warn('ComfyUI parse error', e); }
+                }
+                if (info.swarm) return { ...blank, ...parseSwarm(info.swarm), source: 'SwarmUI' };
+                if (info.parameters) return { ...blank, ...parseA1111(info.parameters), source: 'A1111' };
+                if (info.workflow) return { ...blank, source: 'ComfyUI workflow', notes: '' };
+                return blank;
+            }
+
+            // Workflow JSON for Copy / Download. Prefers the UI workflow (drag-droppable into ComfyUI).
+            function workflowExport(info) {
+                if (!info) return null;
+                if (info.workflow) return { kind: 'workflow', nodeCount: info.workflow.nodes.length, text: info.workflowText || JSON.stringify(info.workflow, null, 2) };
+                if (info.prompt) return { kind: 'API prompt', nodeCount: Object.keys(info.prompt).length, text: JSON.stringify(info.prompt, null, 2) };
+                return null;
+            }
+
+            return { read, extract, workflowExport, isVideoName, VIDEO_EXT };
+        })();
+    </script>
+
+    <script id="cleanModule">
+        // Metadata-free copies, built by copying container structures (no re-encoding).
+        // Each function takes the original File (read-only) and returns { blob, removed[], warnings[] }.
+        const Clean = (() => {
+            const MB = 1024 * 1024;
+            const latin1 = new TextDecoder('latin1');
+            const ascii = (b, s, n) => latin1.decode(b.subarray(s, s + n));
+            const dvOf = b => new DataView(b.buffer, b.byteOffset, b.byteLength);
+            const bytes = async (blob, s, e) => new Uint8Array(await blob.slice(Math.max(0, s), Math.min(blob.size, e)).arrayBuffer());
+            const all = async blob => new Uint8Array(await blob.arrayBuffer());
+            const tally = list => { const m = new Map(); for (const x of list) m.set(x, (m.get(x) || 0) + 1); return [...m].map(([k, n]) => n > 1 ? `${k}×${n}` : k); };
+
+            const CRC_TABLE = (() => {
+                const t = new Uint32Array(256);
+                for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+                return t;
+            })();
+            function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_TABLE[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+
+            async function detect(file) {
+                const h = await bytes(file, 0, 16);
+                if (h[0] === 0x89 && ascii(h, 1, 3) === 'PNG') return 'png';
+                if (h[0] === 0xFF && h[1] === 0xD8) return 'jpeg';
+                if (ascii(h, 0, 4) === 'RIFF' && ascii(h, 8, 4) === 'WEBP') return 'webp';
+                if (h[0] === 0x1A && h[1] === 0x45 && h[2] === 0xDF && h[3] === 0xA3) return 'matroska';
+                if (['ftyp', 'moov', 'mdat', 'free', 'wide', 'skip', 'pnot'].includes(ascii(h, 4, 4))) return 'isobmff';
+                return null;
+            }
+
+            // ---------- PNG: keep every chunk except tEXt / iTXt / zTXt / eXIf ----------
+            function pngChunks(b) {
+                if (!(b[0] === 0x89 && ascii(b, 1, 3) === 'PNG')) throw new Error('Not a PNG file.');
+                const dv = dvOf(b), out = [];
+                let p = 8;
+                while (p + 12 <= b.length) {
+                    const len = dv.getUint32(p), type = ascii(b, p + 4, 4), end = p + 12 + len;
+                    if (end > b.length) throw new Error(`PNG chunk ${type} is truncated.`);
+                    out.push({ type, start: p, end });
+                    p = end;
+                    if (type === 'IEND') break;
+                }
+                if (!out.length || out[0].type !== 'IHDR' || out[out.length - 1].type !== 'IEND') throw new Error('PNG structure is incomplete.');
+                return { chunks: out, trailing: b.length - p };
+            }
+            const PNG_META = new Set(['tEXt', 'iTXt', 'zTXt', 'eXIf']);
+            async function png(file) {
+                const b = await all(file);
+                const { chunks, trailing } = pngChunks(b);
+                const keep = [b.subarray(0, 8)], removed = [];
+                for (const c of chunks) (PNG_META.has(c.type) ? removed.push(c.type) : keep.push(b.subarray(c.start, c.end)));
+                if (trailing > 0) removed.push('data after IEND');
+                return { blob: new Blob(keep, { type: 'image/png' }), removed: tally(removed), warnings: [] };
+            }
+            function makeChunk(type, data) {
+                const out = new Uint8Array(12 + data.length), dv = dvOf(out);
+                dv.setUint32(0, data.length);
+                for (let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i);
+                out.set(data, 8);
+                dv.setUint32(8 + data.length, crc32(out.subarray(4, 8 + data.length)));
+                return out;
+            }
+            // tEXt when the text is Latin-1, otherwise iTXt (UTF-8), the same way A1111/PIL does.
+            function textChunk(key, text) {
+                const k = new TextEncoder().encode(key);
+                if (/^[\x01-\xFF]*$/.test(text)) {
+                    const d = new Uint8Array(k.length + 1 + text.length);
+                    d.set(k); for (let i = 0; i < text.length; i++) d[k.length + 1 + i] = text.charCodeAt(i);
+                    return { chunk: makeChunk('tEXt', d), type: 'tEXt' };
+                }
+                const t = new TextEncoder().encode(text);
+                const d = new Uint8Array(k.length + 5 + t.length); // key\0 flag(0) method(0) lang\0 translated\0 text
+                d.set(k); d.set(t, k.length + 5);
+                return { chunk: makeChunk('iTXt', d), type: 'iTXt' };
+            }
+            async function pngWithText(file, key, text) {
+                const clean = await png(file);
+                const b = await all(clean.blob);
+                const ihdr = pngChunks(b).chunks[0];
+                const { chunk, type } = textChunk(key, text);
+                return { blob: new Blob([b.subarray(0, ihdr.end), chunk, b.subarray(ihdr.end)], { type: 'image/png' }), removed: clean.removed, chunkType: type };
+            }
+
+            // ---------- JPEG: drop APP1 (EXIF/XMP), APP13, COM ----------
+            function exifOrientation(seg) { // seg = APP1 payload starting with "Exif\0\0"
+                try {
+                    const t = seg.subarray(6), dv = dvOf(t), le = t[0] === 0x49;
+                    const ifd = dv.getUint32(4, le), n = dv.getUint16(ifd, le);
+                    for (let i = 0; i < n; i++) {
+                        const e = ifd + 2 + i * 12;
+                        if (dv.getUint16(e, le) === 0x0112) return dv.getUint16(e + 8, le);
+                    }
+                } catch (e) { }
+                return 1;
+            }
+            async function jpeg(file) {
+                const b = await all(file);
+                if (!(b[0] === 0xFF && b[1] === 0xD8)) throw new Error('Not a JPEG file.');
+                const parts = [b.subarray(0, 2)], removed = [], warnings = [];
+                let p = 2, sawEOI = false;
+                while (p < b.length) {
+                    if (b[p] !== 0xFF) throw new Error(`Unexpected JPEG structure at byte ${p}.`);
+                    const m = b[p + 1];
+                    if (m === 0xFF) { p++; continue; } // fill byte
+                    if (m === 0x01 || (m >= 0xD0 && m <= 0xD7)) { parts.push(b.subarray(p, p + 2)); p += 2; continue; }
+                    if (m === 0xD9) { parts.push(b.subarray(p, p + 2)); p += 2; sawEOI = true; break; }
+                    if (p + 4 > b.length) throw new Error('JPEG is truncated.');
+                    const end = p + 2 + ((b[p + 2] << 8) | b[p + 3]);
+                    if (end > b.length) throw new Error('JPEG segment is truncated.');
+                    if (m === 0xDA) {
+                        // Scan header, then entropy-coded data up to the next real marker
+                        // (FF00 = stuffed byte, FFD0-D7 = restart). Progressive files have several scans.
+                        let q = end;
+                        while (q + 1 < b.length) {
+                            if (b[q] === 0xFF) {
+                                const n = b[q + 1];
+                                if (n !== 0x00 && !(n >= 0xD0 && n <= 0xD7) && n !== 0xFF) break;
+                                q += 2; continue;
+                            }
+                            q++;
+                        }
+                        if (q + 1 >= b.length) q = b.length; // ran off the end without another marker
+                        parts.push(b.subarray(p, q));
+                        p = q;
+                        continue;
+                    }
+                    const seg = b.subarray(p + 4, end);
+                    if (m === 0xE1) {
+                        const kind = ascii(seg, 0, 6) === 'Exif\0\0' ? 'EXIF' : ascii(seg, 0, 28) === 'http://ns.adobe.com/xap/1.0/' ? 'XMP' : 'APP1';
+                        if (kind === 'EXIF' && exifOrientation(seg) !== 1) warnings.push('The EXIF orientation tag was removed, so viewers may show this copy rotated.');
+                        removed.push(kind);
+                    } else if (m === 0xED) removed.push('APP13');
+                    else if (m === 0xFE) removed.push('COM');
+                    else parts.push(b.subarray(p, end));
+                    p = end;
+                }
+                if (!sawEOI) warnings.push('The original JPEG has no end-of-image marker; the copy keeps it that way.');
+                if (p < b.length) removed.push('data after end of image');
+                return { blob: new Blob(parts, { type: 'image/jpeg' }), removed: tally(removed), warnings };
+            }
+
+            // ---------- WebP: drop EXIF / XMP chunks, fix RIFF size and VP8X flags ----------
+            async function webp(file) {
+                const b = await all(file), dv = dvOf(b);
+                if (!(ascii(b, 0, 4) === 'RIFF' && ascii(b, 8, 4) === 'WEBP')) throw new Error('Not a WebP file.');
+                const riffEnd = Math.min(b.length, 8 + dv.getUint32(4, true));
+                const parts = [], removed = [];
+                let p = 12, vp8x = null;
+                while (p + 8 <= riffEnd) {
+                    const type = ascii(b, p, 4), len = dv.getUint32(p + 4, true);
+                    let end = p + 8 + len + (len & 1);
+                    if (end > riffEnd) { if (p + 8 + len <= riffEnd) end = p + 8 + len; else throw new Error(`WebP chunk ${type.trim()} is truncated.`); }
+                    if (type === 'EXIF' || type === 'XMP ') removed.push(type.trim());
+                    else {
+                        const c = b.slice(p, end); // copy: VP8X gets edited
+                        if (type === 'VP8X') vp8x = c;
+                        parts.push(c);
+                    }
+                    p = end;
+                }
+                if (vp8x) vp8x[8] &= ~(0x08 | 0x04); // clear EXIF + XMP flags
+                const body = parts.reduce((n, c) => n + c.length, 0);
+                const head = new Uint8Array(12);
+                head.set([0x52, 0x49, 0x46, 0x46]); dvOf(head).setUint32(4, 4 + body, true); head.set([0x57, 0x45, 0x42, 0x50], 8);
+                if (riffEnd < b.length) removed.push('data after RIFF');
+                return { blob: new Blob([head, ...parts], { type: 'image/webp' }), removed: tally(removed), warnings: [] };
+            }
+
+            // ---------- MP4 / MOV: rename udta / meta boxes to 'free' and zero them (sizes and offsets unchanged) ----------
+            function childBoxes(b, s, e) {
+                const dv = dvOf(b), out = [];
+                let p = s;
+                while (p + 8 <= e) {
+                    let size = dv.getUint32(p), hdr = 8;
+                    if (size === 1) { if (p + 16 > e) break; size = Number(dv.getBigUint64(p + 8)); hdr = 16; }
+                    else if (size === 0) size = e - p;
+                    if (size < hdr || p + size > e) break;
+                    out.push({ type: ascii(b, p + 4, 4), p, s: p + hdr, e: p + size });
+                    p += size;
+                }
+                return out;
+            }
+            const neutralize = (b, box) => { b.set([0x66, 0x72, 0x65, 0x65], box.p + 4); b.fill(0, box.s, box.e); }; // 'free'
+            function patchMoov(b, s, e, removed, where) {
+                for (const c of childBoxes(b, s, e)) {
+                    if (c.type === 'udta' || c.type === 'meta') { neutralize(b, c); removed.push(`${where}/${c.type}`); }
+                    else if (c.type === 'trak') patchMoov(b, c.s, c.e, removed, 'trak');
+                }
+            }
+            async function isobmff(file) {
+                const patches = [], removed = [];
+                let pos = 0, guard = 0;
+                while (pos + 8 <= file.size && guard++ < 100000) {
+                    const h = await bytes(file, pos, pos + 16), dv = dvOf(h);
+                    let size = dv.getUint32(0), hdr = 8;
+                    const type = ascii(h, 4, 4);
+                    if (size === 1) { size = Number(dv.getBigUint64(8)); hdr = 16; }
+                    else if (size === 0) size = file.size - pos;
+                    if (size < hdr || pos + size > file.size) throw new Error(`Box '${type}' at ${pos} runs past the end of the file.`);
+                    if (type === 'moov') {
+                        if (size > 256 * MB) throw new Error('The moov box is too large to patch.');
+                        const m = await bytes(file, pos, pos + size);
+                        patchMoov(m, hdr, size, removed, 'moov');
+                        patches.push({ at: pos, data: m });
+                    } else if (type === 'udta' || type === 'meta') {
+                        if (size > 64 * MB) throw new Error(`Top-level '${type}' box is too large.`);
+                        const m = await bytes(file, pos, pos + size);
+                        neutralize(m, { p: 0, s: hdr, e: size });
+                        patches.push({ at: pos, data: m });
+                        removed.push(type);
+                    }
+                    pos += size;
+                }
+                const parts = [];
+                let cur = 0;
+                for (const pt of patches) { parts.push(file.slice(cur, pt.at), pt.data); cur = pt.at + pt.data.length; }
+                parts.push(file.slice(cur));
+                return { blob: new Blob(parts, { type: file.type || 'video/mp4' }), removed: tally(removed), warnings: [] };
+            }
+
+            // ---------- WebM / MKV: Tags element -> Void element of the same size ----------
+            const vintLen = byte => { for (let i = 0; i < 8; i++) if (byte & (0x80 >> i)) return i + 1; return 0; };
+            function el(b, p) {
+                if (p >= b.length) return null;
+                const idLen = vintLen(b[p]);
+                if (!idLen || idLen > 4 || p + idLen >= b.length) return null;
+                let id = 0;
+                for (let i = 0; i < idLen; i++) id = id * 256 + b[p + i];
+                const q = p + idLen, sLen = vintLen(b[q]);
+                if (!sLen || q + sLen > b.length) return null;
+                let size = b[q] & (0xFF >> sLen), allOnes = size === (0xFF >> sLen);
+                for (let i = 1; i < sLen; i++) { size = size * 256 + b[q + i]; if (b[q + i] !== 0xFF) allOnes = false; }
+                return { id, p, s: q + sLen, size: allOnes ? Infinity : size, e: allOnes ? Infinity : q + sLen + size };
+            }
+            function voidElement(total) {
+                for (let L = 8; L >= 1; L--) {
+                    const n = total - 1 - L;
+                    if (n < 0 || n >= 2 ** (7 * L) - 1) continue;
+                    const out = new Uint8Array(total);
+                    out[0] = 0xEC;
+                    let v = n;
+                    for (let i = L; i >= 1; i--) { out[i] = v % 256; v = Math.floor(v / 256); }
+                    out[1] |= 0x80 >> (L - 1);
+                    return out;
+                }
+                throw new Error('Element too small to replace.');
+            }
+            // Point the SeekHead away from removed Tags: its Seek entry becomes a Void too, and any CRC-32 is redone.
+            function patchSeekHead(b) {
+                let changed = false;
+                const kids = [];
+                for (let p = 0; p < b.length;) { const c = el(b, p); if (!c || c.e > b.length) break; kids.push(c); p = c.e; }
+                for (const c of kids) {
+                    if (c.id !== 0x4DBB) continue; // Seek
+                    for (let p = c.s; p < c.e;) {
+                        const k = el(b, p);
+                        if (!k || k.e > c.e) break;
+                        if (k.id === 0x53AB && k.size === 4 && b[k.s] === 0x12 && b[k.s + 1] === 0x54 && b[k.s + 2] === 0xC3 && b[k.s + 3] === 0x67) {
+                            b.set(voidElement(c.e - c.p), c.p);
+                            changed = true;
+                            break;
+                        }
+                        p = k.e;
+                    }
+                }
+                const crc = kids[0] && kids[0].id === 0xBF && kids[0].size === 4 ? kids[0] : null;
+                if (changed && crc) dvOf(b).setUint32(crc.s, crc32(b.subarray(crc.e)), true);
+                return changed;
+            }
+            async function matroska(file) {
+                const readEl = async pos => { const e = el(await bytes(file, pos, pos + 16), 0); return e && { ...e, p: pos, s: pos + e.s, e: e.e === Infinity ? Infinity : pos + e.e }; };
+                const head = await readEl(0);
+                if (!head || head.id !== 0x1A45DFA3 || head.e === Infinity) throw new Error('Not a Matroska/WebM file.');
+                const seg = await readEl(head.e);
+                if (!seg || seg.id !== 0x18538067) throw new Error('WebM segment not found.');
+                const segEnd = seg.e === Infinity ? file.size : Math.min(file.size, seg.e);
+                const patches = [], removed = [], warnings = [];
+                let pos = seg.s, guard = 0;
+                while (pos < segEnd && guard++ < 1000000) {
+                    const c = await readEl(pos);
+                    if (!c) break;
+                    if (c.e === Infinity) { warnings.push('Part of this file is written as a live stream, so any tags after that point could not be checked.'); break; }
+                    if (c.id === 0x1254C367) { // Tags
+                        patches.push({ at: c.p, data: voidElement(c.e - c.p) });
+                        removed.push('Tags');
+                    } else if (c.id === 0x114D9B74 && c.e - c.p < 16 * MB) { // SeekHead
+                        const b = await bytes(file, c.p, c.e);
+                        const inner = b.subarray(c.s - c.p);
+                        if (patchSeekHead(inner)) patches.push({ at: c.p, data: b });
+                    }
+                    pos = c.e;
+                }
+                patches.sort((a, b) => a.at - b.at);
+                const parts = [];
+                let cur = 0;
+                for (const pt of patches) { parts.push(file.slice(cur, pt.at), pt.data); cur = pt.at + pt.data.length; }
+                parts.push(file.slice(cur));
+                return { blob: new Blob(parts, { type: file.type || 'video/webm' }), removed: tally(removed), warnings };
+            }
+
+            const strip = { png, jpeg, webp, isobmff, matroska };
+            return { detect, strip, pngWithText, SUPPORTED: Object.keys(strip) };
+        })();
+    </script>
+
+    <script id="mediaInfoModule">
+        // Container-level facts the metadata reader doesn't cover: image size, video frames / fps.
+        const MediaInfo = (() => {
+            const MB = 1024 * 1024;
+            const latin1 = new TextDecoder('latin1');
+            const ascii = (b, s, n) => latin1.decode(b.subarray(s, s + n));
+            const dvOf = b => new DataView(b.buffer, b.byteOffset, b.byteLength);
+            async function bytes(file, start, end) {
+                start = Math.max(0, start); end = Math.min(file.size, end);
+                if (end <= start) return new Uint8Array(0);
+                return new Uint8Array(await file.slice(start, end).arrayBuffer());
+            }
+
+            // ---------- Image dimensions from the header ----------
+            async function imageSize(file) {
+                const b = await bytes(file, 0, 512 * 1024);
+                if (b.length < 30) return null;
+                const dv = dvOf(b);
+                if (b[0] === 0x89 && ascii(b, 1, 3) === 'PNG') return { width: dv.getUint32(16), height: dv.getUint32(20) };
+                if (ascii(b, 0, 3) === 'GIF') return { width: dv.getUint16(6, true), height: dv.getUint16(8, true) };
+                if (ascii(b, 0, 4) === 'RIFF' && ascii(b, 8, 4) === 'WEBP') {
+                    const t = ascii(b, 12, 4);
+                    if (t === 'VP8X') return { width: 1 + (b[24] | b[25] << 8 | b[26] << 16), height: 1 + (b[27] | b[28] << 8 | b[29] << 16) };
+                    if (t === 'VP8L') { const v = dv.getUint32(21, true); return { width: (v & 0x3FFF) + 1, height: ((v >> 14) & 0x3FFF) + 1 }; }
+                    if (t === 'VP8 ') return { width: dv.getUint16(26, true) & 0x3FFF, height: dv.getUint16(28, true) & 0x3FFF };
+                }
+                if (b[0] === 0xFF && b[1] === 0xD8) {
+                    let p = 2;
+                    while (p + 9 < b.length) {
+                        if (b[p] !== 0xFF) { p++; continue; }
+                        const m = b[p + 1];
+                        if (m === 0xFF) { p++; continue; }
+                        if (m === 0xD8 || m === 0x01 || (m >= 0xD0 && m <= 0xD7)) { p += 2; continue; }
+                        if ((m >= 0xC0 && m <= 0xCF) && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) return { width: dv.getUint16(p + 7), height: dv.getUint16(p + 5) };
+                        if (m === 0xDA || m === 0xD9) break;
+                        p += 2 + dv.getUint16(p + 2);
+                    }
+                }
+                return null;
+            }
+
+            // ---------- MP4 / MOV: moov > trak(vide) > mdia > mdhd + stbl/stts ----------
+            function boxes(b, s, e) {
+                const dv = dvOf(b), out = [];
+                let p = s;
+                while (p + 8 <= e) {
+                    let size = dv.getUint32(p), hdr = 8;
+                    const type = ascii(b, p + 4, 4);
+                    if (size === 1) { if (p + 16 > e) break; size = Number(dv.getBigUint64(p + 8)); hdr = 16; }
+                    else if (size === 0) size = e - p;
+                    if (size < hdr || p + size > e) break;
+                    out.push({ type, s: p + hdr, e: p + size });
+                    p += size;
+                }
+                return out;
+            }
+            const child = (b, box, type) => box && boxes(b, box.s, box.e).find(x => x.type === type);
+            async function mp4Info(file) {
+                let pos = 0, moov = null, guard = 0;
+                while (pos + 8 <= file.size && guard++ < 100000) {
+                    const h = await bytes(file, pos, pos + 16);
+                    const dv = dvOf(h);
+                    let size = dv.getUint32(0), hdr = 8;
+                    const type = ascii(h, 4, 4);
+                    if (size === 1) { size = Number(dv.getBigUint64(8)); hdr = 16; }
+                    else if (size === 0) size = file.size - pos;
+                    if (size < hdr) break;
+                    if (type === 'moov') { if (size > 128 * MB) return null; moov = await bytes(file, pos + hdr, pos + size); break; }
+                    pos += size;
+                }
+                if (!moov) return null;
+                const dv = dvOf(moov);
+                for (const trak of boxes(moov, 0, moov.length).filter(x => x.type === 'trak')) {
+                    const mdia = child(moov, trak, 'mdia');
+                    const hdlr = child(moov, mdia, 'hdlr');
+                    if (!hdlr || ascii(moov, hdlr.s + 8, 4) !== 'vide') continue;
+                    const mdhd = child(moov, mdia, 'mdhd');
+                    let timescale = 0, duration = 0;
+                    if (mdhd) {
+                        if (moov[mdhd.s] === 1) { timescale = dv.getUint32(mdhd.s + 20); duration = Number(dv.getBigUint64(mdhd.s + 24)); }
+                        else { timescale = dv.getUint32(mdhd.s + 12); duration = dv.getUint32(mdhd.s + 16); }
+                    }
+                    const stts = child(moov, child(moov, child(moov, mdia, 'minf'), 'stbl'), 'stts');
+                    let frames = 0;
+                    if (stts) {
+                        const n = dv.getUint32(stts.s + 4);
+                        for (let i = 0; i < n && stts.s + 16 + i * 8 <= stts.e; i++) frames += dv.getUint32(stts.s + 8 + i * 8);
+                    }
+                    const tkhd = child(moov, trak, 'tkhd');
+                    const out = {};
+                    if (tkhd) { out.width = Math.round(dv.getUint32(tkhd.e - 8) / 65536); out.height = Math.round(dv.getUint32(tkhd.e - 4) / 65536); }
+                    const secs = timescale ? duration / timescale : 0;
+                    if (secs > 0) out.duration = secs;
+                    if (frames) out.frames = frames;
+                    if (frames && secs > 0) out.fps = frames / secs;
+                    return out;
+                }
+                return null;
+            }
+
+            // ---------- WebM / MKV: Segment > Info (Duration) + Tracks (DefaultDuration) ----------
+            const vintLen = byte => { for (let i = 0; i < 8; i++) if (byte & (0x80 >> i)) return i + 1; return 0; };
+            function el(b, p) {
+                if (p >= b.length) return null;
+                const idLen = vintLen(b[p]);
+                if (!idLen || idLen > 4 || p + idLen >= b.length) return null;
+                let id = 0;
+                for (let i = 0; i < idLen; i++) id = id * 256 + b[p + i];
+                const q = p + idLen, sLen = vintLen(b[q]);
+                if (!sLen || q + sLen > b.length) return null;
+                let size = b[q] & (0xFF >> sLen), allOnes = size === (0xFF >> sLen);
+                for (let i = 1; i < sLen; i++) { size = size * 256 + b[q + i]; if (b[q + i] !== 0xFF) allOnes = false; }
+                const s = q + sLen;
+                return { id, s, e: allOnes ? b.length : Math.min(b.length, s + size), unknown: allOnes };
+            }
+            function children(b, s, e) {
+                const out = [];
+                let p = s;
+                while (p < e) { const c = el(b, p); if (!c) break; out.push(c); if (c.unknown) break; p = c.e; }
+                return out;
+            }
+            const uint = (b, c) => { let v = 0; for (let i = c.s; i < c.e; i++) v = v * 256 + b[i]; return v; };
+            const float = (b, c) => { const dv = dvOf(b); return c.e - c.s === 4 ? dv.getFloat32(c.s) : c.e - c.s === 8 ? dv.getFloat64(c.s) : 0; };
+            async function webmInfo(file) {
+                const b = await bytes(file, 0, 4 * MB);
+                const head = el(b, 0);
+                if (!head || head.id !== 0x1A45DFA3) return null;
+                const seg = el(b, head.e);
+                if (!seg || seg.id !== 0x18538067) return null;
+                let scale = 1e6, dur = 0, frameNs = 0, width, height;
+                for (const c of children(b, seg.s, seg.e)) {
+                    if (c.id === 0x1F43B675) break; // first Cluster: headers are done
+                    if (c.id === 0x1549A966) { // Info
+                        for (const i of children(b, c.s, c.e)) {
+                            if (i.id === 0x2AD7B1) scale = uint(b, i);
+                            else if (i.id === 0x4489) dur = float(b, i);
+                        }
+                    } else if (c.id === 0x1654AE6B) { // Tracks
+                        for (const t of children(b, c.s, c.e)) {
+                            if (t.id !== 0xAE) continue;
+                            const kids = children(b, t.s, t.e);
+                            const type = kids.find(k => k.id === 0x83);
+                            if (!type || uint(b, type) !== 1) continue;
+                            const dd = kids.find(k => k.id === 0x23E383);
+                            if (dd) frameNs = uint(b, dd);
+                            const video = kids.find(k => k.id === 0xE0);
+                            if (video) for (const v of children(b, video.s, video.e)) {
+                                if (v.id === 0xB0) width = uint(b, v);
+                                else if (v.id === 0xBA) height = uint(b, v);
+                            }
+                            break;
+                        }
+                    }
+                }
+                const out = {};
+                if (width) { out.width = width; out.height = height; }
+                const secs = dur * scale / 1e9;
+                if (secs > 0) out.duration = secs;
+                if (frameNs) {
+                    out.fps = 1e9 / frameNs;
+                    if (secs > 0) out.frames = Math.round(secs * out.fps);
+                }
+                return out;
+            }
+
+            async function videoInfo(file) {
+                try {
+                    const h = await bytes(file, 0, 12);
+                    if (h[0] === 0x1A && h[1] === 0x45 && h[2] === 0xDF && h[3] === 0xA3) return await webmInfo(file);
+                    if (['ftyp', 'moov', 'mdat', 'free', 'wide', 'skip', 'pnot'].includes(ascii(h, 4, 4))) return await mp4Info(file);
+                } catch (e) { console.warn('Video info error:', file.name, e); }
+                return null;
+            }
+
+            // Fallback from the ComfyUI graph when the container doesn't say.
+            function graphVideoHints(graph) {
+                const out = {};
+                if (!graph) return out;
+                for (const n of Object.values(graph)) {
+                    const ins = (n && n.inputs) || {};
+                    for (const k of ['frame_rate', 'fps']) if (out.fps === undefined && typeof ins[k] === 'number' && ins[k] > 0) out.fps = ins[k];
+                    for (const k of ['length', 'num_frames', 'video_frames', 'frame_count', 'frames_number']) if (out.frames === undefined && typeof ins[k] === 'number' && ins[k] > 0) out.frames = ins[k];
+                }
+                return out;
+            }
+
+            return { imageSize, videoInfo, graphVideoHints };
+        })();
+    </script>
+
+    <script>
+        // ===================================================================
+        //  Helpers
+        // ===================================================================
+        const $ = id => document.getElementById(id);
+        const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const extOf = name => { const i = name.lastIndexOf('.'); return i >= 0 ? name.slice(i).toLowerCase() : ''; };
+        const IMAGE_EXT = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.avif'];
+        const VIDEO_EXT = AIMeta.VIDEO_EXT;
+        const kindOf = name => IMAGE_EXT.includes(extOf(name)) ? 'image' : VIDEO_EXT.includes(extOf(name)) ? 'video' : null;
+        const baseName = p => String(p || '').split(/[\\/]/).pop();
+        const blank = v => v === undefined || v === null || v === '';
+        const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+        const hasFSA = 'showDirectoryPicker' in window;
+
+        function fmtBytes(n) {
+            if (n < 1024) return n + ' B';
+            if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+            if (n < 1024 ** 3) return (n / 1024 / 1024).toFixed(1) + ' MB';
+            return (n / 1024 ** 3).toFixed(2) + ' GB';
+        }
+        function fmtDur(s) {
+            if (!isFinite(s) || s <= 0) return '';
+            if (s < 60) return s.toFixed(s < 10 ? 1 : 0) + 's';
+            const m = Math.floor(s / 60), r = Math.round(s % 60);
+            return `${m}:${String(r).padStart(2, '0')}`;
+        }
+        const fmtFps = f => blank(f) ? '' : String(Number(Number(f).toFixed(3)));
+
+        function toast(msg, kind = '', ms = kind === 'error' ? 4500 : 2600) {
+            const t = document.createElement('div');
+            t.className = 'toast ' + kind;
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, ms);
+        }
+
+        async function copyText(text) {
+            try { await navigator.clipboard.writeText(text); return true; }
+            catch (e) {
+                const ta = document.createElement('textarea');
+                ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                document.body.appendChild(ta); ta.select();
+                let ok = false;
+                try { ok = document.execCommand('copy'); } catch (e2) { }
+                ta.remove();
+                return ok;
+            }
+        }
+
+        // Small promise queue with a concurrency limit; clear() drops anything not yet started.
+        function makeQueue(limit) {
+            let active = 0;
+            const q = [];
+            const pump = () => {
+                while (active < limit && q.length) {
+                    const job = q.shift();
+                    active++;
+                    Promise.resolve().then(job.fn).then(job.res, job.rej).finally(() => { active--; pump(); });
+                }
+            };
+            return {
+                push(fn, front = false) { return new Promise((res, rej) => { front ? q.unshift({ fn, res, rej }) : q.push({ fn, res, rej }); pump(); }); },
+                clear() { while (q.length) q.shift().res(undefined); },
+                get size() { return q.length + active; }
+            };
+        }
+
+        // ===================================================================
+        //  Saved folders (localStorage) + directory handles (IndexedDB)
+        //  Separate keys from v2 so the two apps never touch each other's data.
+        // ===================================================================
+        const Store = {
+            DB: 'AIInfoReaderV3',
+            LS: 'aiInfoReaderV3Folders',
+            open(name) {
+                return new Promise((resolve, reject) => {
+                    const r = indexedDB.open(name || this.DB, 1);
+                    r.onupgradeneeded = () => {
+                        if (!r.result.objectStoreNames.contains('directoryHandles')) r.result.createObjectStore('directoryHandles', { keyPath: 'id' });
+                    };
+                    r.onsuccess = () => resolve(r.result);
+                    r.onerror = () => reject(r.error);
+                });
+            },
+            async run(mode, fn, dbName) {
+                const db = await this.open(dbName);
+                try {
+                    return await new Promise((resolve, reject) => {
+                        const tx = db.transaction(['directoryHandles'], mode);
+                        const req = fn(tx.objectStore('directoryHandles'));
+                        tx.oncomplete = () => resolve(req && req.result);
+                        tx.onerror = () => reject(tx.error);
+                    });
+                } finally { db.close(); }
+            },
+            putHandle(id, handle) { return this.run('readwrite', s => s.put({ id, handle })); },
+            async getHandle(id, dbName) {
+                try { const r = await this.run('readonly', s => s.get(id), dbName); return r ? r.handle : null; }
+                catch (e) { return null; }
+            },
+            deleteHandle(id) { return this.run('readwrite', s => s.delete(id)).catch(() => { }); },
+            loadFolders() { try { return JSON.parse(localStorage.getItem(this.LS)) || []; } catch (e) { return []; } },
+            saveFolders(list) { localStorage.setItem(this.LS, JSON.stringify(list.map(({ id, name, hasHandle }) => ({ id, name, hasHandle })))); },
+            v2Folders() { try { return JSON.parse(localStorage.getItem('aiPresetManagerFolders')) || []; } catch (e) { return []; } }
+        };
+
+        async function ensurePermission(handle, mode = 'read') {
+            const opts = { mode };
+            if (await handle.queryPermission(opts) === 'granted') return true;
+            return (await handle.requestPermission(opts)) === 'granted';
+        }
+
+        // ===================================================================
+        //  App state
+        // ===================================================================
+        const state = {
+            folders: Store.loadFolders(),
+            currentId: null,
+            cache: new Map(),      // folderId -> { items, dirHandle }
+            items: [],
+            filtered: [],
+            dirHandle: null,
+            gen: 0,                // bumps on folder switch; stale async work checks it
+            pendingPickFor: null,  // folderId waiting on the fallback <input> picker
+            pendingAdd: null,      // { handle } or { files } while adding a folder
+            detailIndex: -1,
+            detailToken: 0,
+            detailUrl: null,
+            copyMap: {},
+            scanDone: 0,
+            scanTotal: 0
+        };
+        let nextItemId = 1;
+        const metaQueue = makeQueue(4);
+        const thumbQueue = makeQueue(3);
+
+        // ===================================================================
+        //  Items: build, read metadata, thumbnails
+        // ===================================================================
+        function makeItem(name, src) {
+            return {
+                id: nextItemId++, name, kind: kindOf(name),
+                handle: src.handle || null, file: src.file || null,
+                size: src.size, mtime: src.mtime,
+                metaState: 'pending', thumbState: 'none',
+                info: null, fields: null, source: null,
+                embInfo: null, embFields: null, embSource: null,
+                sidecarRef: null, sidecar: null, sidecarError: null, userNotes: '', sourceUrl: '',
+                width: null, height: null, duration: null, frames: null, fps: null, fpsSource: null,
+                thumbUrl: null, el: null, haystack: name.toLowerCase()
+            };
+        }
+        const getFile = item => item.file ? Promise.resolve(item.file) : item.handle.getFile();
+
+        function sourceClass(item) {
+            const s = item.source || '';
+            if (s.startsWith('ComfyUI')) return 'comfy';
+            if (s === 'A1111' || s === 'SwarmUI') return 'a1111';
+            if (s === 'manual') return 'manual';
+            return 'none';
+        }
+        function badgeFor(item) {
+            if (item.metaState !== 'done') return { icon: '…', cls: 'pending', title: 'Reading metadata…' };
+            const cls = sourceClass(item);
+            return {
+                comfy: { icon: '⚙️', cls, title: item.source + ' metadata' },
+                a1111: { icon: '📝', cls, title: item.source + ' metadata' },
+                manual: { icon: '✍️', cls, title: 'Info entered by hand (sidecar)' },
+                none: { icon: '⚠️', cls, title: 'No metadata found' }
+            }[cls];
+        }
+
+        // One read per item, however many callers ask (scan queue + detail panel).
+        async function readMeta(item) {
+            if (!item.metaPromise) item.metaPromise = doReadMeta(item);
+            await item.metaPromise;
+            updateCard(item);
+            if (itemById.get(item.id) === item) onScanProgress();
+        }
+
+        async function doReadMeta(item) {
+            try {
+                const file = await getFile(item);
+                const info = await AIMeta.read(file);
+                const fields = AIMeta.extract(info);
+                item.embInfo = info;
+                item.embFields = fields;
+                item.embSource = fields.source;
+                if (item.kind === 'video') {
+                    const v = await MediaInfo.videoInfo(file);
+                    if (v) {
+                        for (const k of ['width', 'height', 'duration', 'frames', 'fps']) if (!blank(v[k]) && blank(item[k])) item[k] = v[k];
+                        if (!blank(v.fps)) item.fpsSource = 'container';
+                    }
+                    if (blank(item.fps) || blank(item.frames)) {
+                        const g = MediaInfo.graphVideoHints(info.prompt);
+                        if (blank(item.fps) && !blank(g.fps)) { item.fps = g.fps; item.fpsSource = 'workflow'; }
+                        if (blank(item.frames) && !blank(g.frames)) item.frames = g.frames;
+                    }
+                } else if (blank(item.width)) {
+                    const d = await MediaInfo.imageSize(file).catch(() => null);
+                    if (d) { item.width = d.width; item.height = d.height; }
+                }
+            } catch (e) {
+                console.warn('Could not read', item.name, e);
+                item.embFields = AIMeta.extract(null);
+            }
+            await readSidecar(item);
+            applySidecar(item);
+            item.metaState = 'done';
+        }
+
+        function videoPoster(file) {
+            return new Promise(resolve => {
+                const url = URL.createObjectURL(file);
+                const v = document.createElement('video');
+                v.muted = true; v.playsInline = true; v.preload = 'auto';
+                let done = false, target = 0;
+                const finish = r => {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timer);
+                    v.removeAttribute('src'); v.load();
+                    URL.revokeObjectURL(url);
+                    resolve(r);
+                };
+                const timer = setTimeout(() => finish({ error: 'timeout' }), 15000);
+                const draw = () => {
+                    const w = v.videoWidth, h = v.videoHeight;
+                    if (!w || !h) return finish({ error: 'no frame', duration: v.duration });
+                    const scale = Math.min(1, 400 / Math.min(w, h));
+                    const c = document.createElement('canvas');
+                    c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+                    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+                    c.toBlob(blob => finish({ blob, duration: v.duration, width: w, height: h }), 'image/jpeg', 0.85);
+                };
+                v.onerror = () => finish({ error: 'unsupported' });
+                v.onloadedmetadata = () => {
+                    const d = v.duration;
+                    target = isFinite(d) && d > 0 ? Math.min(d * 0.1, 1) : 0;
+                    if (target > 0) v.currentTime = target;
+                };
+                v.onloadeddata = () => { if (target === 0) draw(); };
+                v.onseeked = () => { if (target > 0) draw(); };
+                v.src = url;
+            });
+        }
+
+        async function imageThumb(file) {
+            let src;
+            try { src = await createImageBitmap(file); }
+            catch (e) {
+                // Formats createImageBitmap can't take directly: go through an <img>
+                const url = URL.createObjectURL(file);
+                try {
+                    src = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+                } catch (e2) { URL.revokeObjectURL(url); return { error: 'decode' }; }
+                src._url = url;
+            }
+            const w = src.width || src.naturalWidth, h = src.height || src.naturalHeight;
+            const scale = Math.min(1, 400 / Math.min(w, h));
+            const c = document.createElement('canvas');
+            c.width = Math.max(1, Math.round(w * scale)); c.height = Math.max(1, Math.round(h * scale));
+            const ctx = c.getContext('2d');
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(src, 0, 0, c.width, c.height);
+            if (src.close) src.close();
+            if (src._url) URL.revokeObjectURL(src._url);
+            const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.85));
+            return { blob, width: w, height: h };
+        }
+
+        async function makeThumb(item) {
+            if (item.thumbState !== 'queued') return;
+            item.thumbState = 'working';
+            try {
+                const file = await getFile(item);
+                const r = item.kind === 'video' ? await videoPoster(file) : await imageThumb(file);
+                if (r.width && blank(item.width)) { item.width = r.width; item.height = r.height; }
+                if (item.kind === 'video' && isFinite(r.duration) && r.duration > 0 && blank(item.duration)) item.duration = r.duration;
+                if (r.blob) item.thumbUrl = URL.createObjectURL(r.blob);
+                item.thumbState = r.blob ? 'done' : 'failed';
+            } catch (e) {
+                item.thumbState = 'failed';
+            }
+            updateCard(item);
+        }
+
+        const thumbObserver = new IntersectionObserver(entries => {
+            for (const en of entries) {
+                if (!en.isIntersecting) continue;
+                const item = itemById.get(Number(en.target.dataset.id));
+                if (item && item.thumbState === 'none') {
+                    item.thumbState = 'queued';
+                    thumbQueue.push(() => makeThumb(item));
+                }
+            }
+        }, { root: $('main'), rootMargin: '400px' });
+        const itemById = new Map();
+
+        // ===================================================================
+        //  Cards
+        // ===================================================================
+        function cardEl(item) {
+            if (item.el) return item.el;
+            const el = document.createElement('div');
+            el.className = 'card';
+            el.tabIndex = 0;
+            el.dataset.id = item.id;
+            el.innerHTML = `<div class="thumb"><span class="placeholder">${item.kind === 'video' ? '🎬' : '🖼️'}</span>
+                <span class="badges"></span><span class="duration hidden"></span></div>
+                <div class="cap"><div class="name"></div><div class="sub"></div></div>`;
+            el.querySelector('.name').textContent = item.name;
+            el.title = item.name;
+            // Drag the card out to drop the ORIGINAL file (Chrome/Edge). The blob URL must exist
+            // before dragstart fires, so prepare it as soon as the pointer is on the card.
+            el.draggable = true;
+            el.addEventListener('mouseenter', () => prepareDragUrl(item));
+            el.addEventListener('pointerdown', () => prepareDragUrl(item));
+            el.addEventListener('dragstart', e => {
+                if (!item.dragUrl) { e.preventDefault(); toast('Preparing the file — try dragging again.'); return; }
+                setDownloadDrag(e, item.name, item.dragMime, item.dragUrl);
+            });
+            if (item.kind === 'video') {
+                let timer = null, vid = null, url = null;
+                el.addEventListener('mouseenter', () => {
+                    timer = setTimeout(async () => {
+                        const file = await getFile(item);
+                        url = URL.createObjectURL(file);
+                        vid = document.createElement('video');
+                        vid.className = 'hover-preview';
+                        vid.muted = true; vid.loop = true; vid.autoplay = true; vid.playsInline = true;
+                        vid.src = url;
+                        el.querySelector('.thumb').insertBefore(vid, el.querySelector('.badges'));
+                    }, 250);
+                });
+                el.addEventListener('mouseleave', () => {
+                    clearTimeout(timer);
+                    if (vid) { vid.removeAttribute('src'); vid.load(); vid.remove(); vid = null; }
+                    if (url) { URL.revokeObjectURL(url); url = null; }
+                });
+            }
+            item.el = el;
+            updateCard(item);
+            thumbObserver.observe(el);
+            return el;
+        }
+
+        function updateCard(item) {
+            const el = item.el;
+            if (!el) return;
+            const thumb = el.querySelector('.thumb');
+            if (item.thumbUrl && !thumb.querySelector('img')) {
+                const img = document.createElement('img');
+                img.src = item.thumbUrl;
+                img.alt = '';
+                img.draggable = false; // the card itself is the drag source
+                const ph = thumb.querySelector('.placeholder');
+                if (ph) ph.remove();
+                thumb.prepend(img);
+            }
+            const b = badgeFor(item);
+            const badges = [`<span class="badge ${b.cls}" title="${esc(b.title)}">${b.icon}</span>`];
+            if (item.embSource && (item.userNotes || item.sourceUrl)) badges.push('<span class="badge manual" title="Has your notes / source link">🗒️</span>');
+            if (item.kind === 'video') badges.push('<span class="badge" title="Video">🎬</span>');
+            el.querySelector('.badges').innerHTML = badges.join('');
+            const dur = el.querySelector('.duration');
+            if (item.kind === 'video' && item.duration) { dur.textContent = fmtDur(item.duration); dur.classList.remove('hidden'); }
+            el.querySelector('.sub').textContent = item.fields && item.fields.checkpoint ? baseName(item.fields.checkpoint) : '';
+        }
+
+        // ===================================================================
+        //  Filtering / sorting / grid
+        // ===================================================================
+        const ui = {
+            search: $('searchInput'), type: $('typeFilter'), meta: $('metaFilter'),
+            model: $('modelFilter'), sort: $('sortSelect'), size: $('sizeRange'),
+            grid: $('grid'), count: $('countText'), status: $('statusText'),
+            bar: $('progressBar'), fill: $('progressFill')
+        };
+
+        function filtersActive() {
+            return ui.search.value.trim() || ui.meta.value !== 'all' || ui.model.value;
+        }
+
+        function applyFilters() {
+            const terms = ui.search.value.toLowerCase().split(/\s+/).filter(Boolean);
+            const type = ui.type.value, meta = ui.meta.value, model = ui.model.value;
+            const out = state.items.filter(it => {
+                if (type !== 'all' && it.kind !== type) return false;
+                if (meta !== 'all') {
+                    if (it.metaState !== 'done') return false;
+                    const c = sourceClass(it);
+                    if (meta === 'has') { if (c === 'none') return false; }
+                    else if (meta === 'notes') { if (!it.userNotes && !it.sourceUrl) return false; }
+                    else if (c !== meta) return false;
+                }
+                if (model && !(it.fields && it.fields.checkpoint === model)) return false;
+                for (const t of terms) if (!it.haystack.includes(t)) return false;
+                return true;
+            });
+            const sort = ui.sort.value;
+            out.sort((a, b) =>
+                sort === 'new' ? b.mtime - a.mtime :
+                sort === 'old' ? a.mtime - b.mtime :
+                sort === 'size' ? b.size - a.size :
+                collator.compare(a.name, b.name));
+            state.filtered = out;
+            renderGrid();
+        }
+
+        function renderGrid() {
+            if (!state.currentId) return;
+            if (!state.items.length) {
+                ui.grid.innerHTML = '<div class="empty"><h3>No images or videos here</h3><p>This folder has no supported files at its top level.</p></div>';
+            } else if (!state.filtered.length) {
+                ui.grid.innerHTML = '<div class="empty"><h3>Nothing matches</h3><p>Try clearing the search or filters.</p></div>';
+            } else {
+                const frag = document.createDocumentFragment();
+                for (const it of state.filtered) frag.appendChild(cardEl(it));
+                ui.grid.replaceChildren(frag);
+            }
+            updateCount();
+        }
+
+        function updateCount() {
+            const n = state.items.length, f = state.filtered.length;
+            const imgs = state.items.filter(i => i.kind === 'image').length;
+            ui.count.textContent = n ? `${f === n ? '' : f + ' of '}${n} files · ${imgs} images · ${n - imgs} videos` : '';
+        }
+
+        function rebuildModelOptions() {
+            const counts = new Map();
+            for (const it of state.items) {
+                const m = it.fields && it.fields.checkpoint;
+                if (m) counts.set(m, (counts.get(m) || 0) + 1);
+            }
+            const cur = ui.model.value;
+            const models = [...counts.keys()].sort((a, b) => collator.compare(baseName(a), baseName(b)));
+            ui.model.innerHTML = '<option value="">All models</option>' +
+                models.map(m => `<option value="${esc(m)}" title="${esc(m)}">${esc(baseName(m))} (${counts.get(m)})</option>`).join('');
+            ui.model.value = models.includes(cur) ? cur : '';
+        }
+
+        let refreshTimer = null;
+        state.needsRefilter = false;
+        function onScanProgress() {
+            const total = state.items.length;
+            let done = 0;
+            for (const it of state.items) if (it.metaState === 'done') done++;
+            const finished = done >= total;
+            ui.bar.classList.toggle('hidden', finished);
+            ui.fill.style.width = total ? (100 * done / total) + '%' : '0';
+            ui.status.textContent = finished
+                ? `Loaded ${total} files from “${currentFolder()?.name || ''}”. ${summaryText()}`
+                : `Reading metadata ${done} / ${total}…`;
+            if (state.detailIndex >= 0) refreshDetailIfPending();
+            if (refreshTimer && !finished) return;
+            clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(() => {
+                refreshTimer = null;
+                rebuildModelOptions();
+                if (!filtersActive()) return;
+                // Don't reshuffle the list under an open detail panel; catch up when it closes.
+                if (state.detailIndex >= 0) state.needsRefilter = true;
+                else applyFilters();
+            }, finished ? 0 : 800);
+        }
+
+        function summaryText() {
+            const c = { comfy: 0, a1111: 0, manual: 0, none: 0 };
+            for (const it of state.items) if (it.metaState === 'done') c[sourceClass(it)]++;
+            return `⚙️ ${c.comfy} ComfyUI · 📝 ${c.a1111} A1111/Swarm · ✍️ ${c.manual} manual · ⚠️ ${c.none} without metadata`;
+        }
+
+        // ===================================================================
+        //  Folders: load, switch, manage
+        // ===================================================================
+        const currentFolder = () => state.folders.find(f => f.id === state.currentId);
+
+        function renderFolderButtons() {
+            const row = $('folderRow');
+            row.innerHTML = '';
+            if (!state.folders.length) {
+                row.innerHTML = '<span class="hint">No folders yet — click “📂 Manage Folders” to add one.</span>';
+                return;
+            }
+            const label = document.createElement('span');
+            label.className = 'label';
+            label.textContent = '📁 Folders:';
+            row.appendChild(label);
+            for (const f of state.folders) {
+                const b = document.createElement('button');
+                b.className = 'folder-btn' + (f.id === state.currentId ? ' active' : '');
+                b.innerHTML = `${esc(f.name)}${state.cache.has(f.id) ? '<span class="cached" title="Already loaded — instant switch">⚡</span>' : ''}`;
+                b.title = state.cache.has(f.id) ? 'Loaded — click to switch' : 'Click to load';
+                b.addEventListener('click', () => openFolder(f.id));
+                row.appendChild(b);
+            }
+        }
+
+        function beginFolder(id) {
+            state.gen++;
+            metaQueue.clear();
+            thumbQueue.clear();
+            // Unfinished thumbnails from the folder we're leaving go back to "not requested".
+            for (const it of state.items) if (it.thumbState === 'queued') it.thumbState = 'none';
+            closeDetail();
+            state.currentId = id;
+            renderFolderButtons();
+        }
+
+        function showItems(items, dirHandle) {
+            state.items = items;
+            state.dirHandle = dirHandle || null;
+            itemById.clear();
+            for (const it of items) itemById.set(it.id, it);
+            ui.model.value = '';
+            rebuildModelOptions();
+            applyFilters();
+            $('main').scrollTop = 0;
+            $('rescanBtn').disabled = false;
+            // Read metadata for everything (needed by filters), in display order.
+            const shown = new Set(state.filtered);
+            const pending = [...state.filtered, ...items.filter(it => !shown.has(it))].filter(it => it.metaState !== 'done');
+            for (const it of pending) metaQueue.push(() => readMeta(it));
+            onScanProgress();
+        }
+
+        async function openFolder(id, { rescan = false } = {}) {
+            const folder = state.folders.find(f => f.id === id);
+            if (!folder) return;
+            if (!rescan && id === state.currentId && state.cache.has(id)) return;
+            if (rescan) dropCache(id);
+            beginFolder(id);
+            const cached = state.cache.get(id);
+            if (cached) { showItems(cached.items, cached.dirHandle); return; }
+
+            if (hasFSA && folder.hasHandle) {
+                const handle = await Store.getHandle(id);
+                if (handle) {
+                    try {
+                        if (await ensurePermission(handle, 'read')) { await loadFromHandle(id, handle); return; }
+                        ui.status.textContent = `Permission to read “${folder.name}” was not granted.`;
+                        return;
+                    } catch (e) {
+                        console.warn(e);
+                        ui.status.textContent = `Couldn't open “${folder.name}” (${e.message}). It may have moved — remove it and add it again.`;
+                        return;
+                    }
+                }
+            }
+            // No stored handle (Firefox): ask for the folder again.
+            state.pendingPickFor = id;
+            ui.status.textContent = `Select the folder for “${folder.name}”…`;
+            $('folderInput').click();
+        }
+
+        async function loadFromHandle(id, handle) {
+            const gen = state.gen;
+            ui.status.textContent = 'Listing files…';
+            const items = [], sidecars = new Map();
+            for await (const entry of handle.values()) {
+                if (entry.kind === 'file' && entry.name.toLowerCase().endsWith(SIDECAR_EXT)) {
+                    sidecars.set(entry.name.slice(0, -SIDECAR_EXT.length).toLowerCase(), { handle: entry });
+                    continue;
+                }
+                if (entry.kind !== 'file' || !kindOf(entry.name)) continue;
+                try {
+                    const f = await entry.getFile();
+                    items.push(makeItem(entry.name, { handle: entry, size: f.size, mtime: f.lastModified }));
+                } catch (e) { console.warn('Skipped', entry.name, e); }
+                if (gen !== state.gen) return;
+            }
+            if (gen !== state.gen) return;
+            for (const it of items) it.sidecarRef = sidecars.get(it.name.toLowerCase()) || null;
+            state.cache.set(id, { items, dirHandle: handle });
+            renderFolderButtons();
+            showItems(items, handle);
+        }
+
+        function loadFromFiles(id, files) {
+            // Top level only, to match the File System Access behaviour.
+            const top = files.filter(f => f.webkitRelativePath.split('/').length === 2);
+            const sidecars = new Map(top.filter(f => f.name.toLowerCase().endsWith(SIDECAR_EXT))
+                .map(f => [f.name.slice(0, -SIDECAR_EXT.length).toLowerCase(), { file: f }]));
+            const items = top.filter(f => kindOf(f.name))
+                .map(f => makeItem(f.name, { file: f, size: f.size, mtime: f.lastModified }));
+            for (const it of items) it.sidecarRef = sidecars.get(it.name.toLowerCase()) || null;
+            state.cache.set(id, { items, dirHandle: null });
+            renderFolderButtons();
+            showItems(items, null);
+        }
+
+        function dropCache(id) {
+            const c = state.cache.get(id);
+            if (!c) return;
+            for (const it of c.items) {
+                if (it.thumbUrl) URL.revokeObjectURL(it.thumbUrl);
+                if (it.dragUrl) URL.revokeObjectURL(it.dragUrl);
+                if (it.el) thumbObserver.unobserve(it.el);
+            }
+            state.cache.delete(id);
+        }
+
+        $('folderInput').addEventListener('change', e => {
+            const files = Array.from(e.target.files);
+            e.target.value = '';
+            if (!files.length) return;
+            const root = files[0].webkitRelativePath.split('/')[0];
+            if (!$('foldersOverlay').classList.contains('hidden')) {
+                state.pendingAdd = { files };
+                showPicked(root);
+            } else if (state.pendingPickFor) {
+                const id = state.pendingPickFor;
+                state.pendingPickFor = null;
+                if (id === state.currentId) loadFromFiles(id, files);
+            }
+        });
+
+        // ---------- Manage folders modal ----------
+        function openFoldersModal() {
+            state.pendingAdd = null;
+            $('newFolderName').value = '';
+            $('pickedText').classList.add('hidden');
+            renderFolderList();
+            $('importV2Wrap').classList.toggle('hidden', !Store.v2Folders().length);
+            $('foldersOverlay').classList.remove('hidden');
+        }
+        function closeFoldersModal() { $('foldersOverlay').classList.add('hidden'); }
+
+        function renderFolderList() {
+            const list = $('folderList');
+            if (!state.folders.length) { list.innerHTML = '<div class="hint">No folders saved yet.</div>'; return; }
+            list.innerHTML = state.folders.map(f => `
+                <div class="folder-item" data-id="${esc(f.id)}">
+                    <span>📁</span>
+                    <div class="fi-name">${esc(f.name)}
+                        <div class="fi-meta">${f.hasHandle ? 'Remembered folder access' : 'You will pick the folder each session'}${state.cache.has(f.id) ? ' · loaded' : ''}</div>
+                    </div>
+                    <button class="btn small secondary" data-act="rename">✏️ Rename</button>
+                    <button class="btn small danger" data-act="delete">🗑️</button>
+                </div>`).join('');
+        }
+
+        $('folderList').addEventListener('click', async e => {
+            const btn = e.target.closest('button[data-act]');
+            if (!btn) return;
+            const id = btn.closest('.folder-item').dataset.id;
+            const f = state.folders.find(x => x.id === id);
+            if (!f) return;
+            if (btn.dataset.act === 'rename') {
+                const name = prompt('Folder name:', f.name);
+                if (name && name.trim()) { f.name = name.trim(); Store.saveFolders(state.folders); }
+            } else if (confirm(`Remove “${f.name}” from the list?\n(Your files are not touched.)`)) {
+                await Store.deleteHandle(id);
+                dropCache(id);
+                state.folders = state.folders.filter(x => x.id !== id);
+                Store.saveFolders(state.folders);
+                if (state.currentId === id) {
+                    beginFolder(null);
+                    state.items = []; state.filtered = [];
+                    ui.grid.innerHTML = '<div class="empty"><h3>No folder loaded</h3><p>Pick a folder above.</p></div>';
+                    updateCount();
+                    $('rescanBtn').disabled = true;
+                }
+            }
+            renderFolderList();
+            renderFolderButtons();
+        });
+
+        function showPicked(name) {
+            $('pickedText').textContent = 'Selected: ' + name;
+            $('pickedText').classList.remove('hidden');
+            if (!$('newFolderName').value.trim()) $('newFolderName').value = name;
+        }
+
+        $('browseBtn').addEventListener('click', async () => {
+            if (!hasFSA) { $('folderInput').click(); return; }
+            try {
+                const handle = await window.showDirectoryPicker({ id: 'aiinfo-v3' });
+                state.pendingAdd = { handle };
+                showPicked(handle.name);
+            } catch (e) { if (e.name !== 'AbortError') console.error(e); }
+        });
+
+        $('saveFolderBtn').addEventListener('click', async () => {
+            const name = $('newFolderName').value.trim();
+            if (!state.pendingAdd) { alert('Click “Browse…” and pick a folder first.'); return; }
+            if (!name) { alert('Please enter a name.'); return; }
+            const folder = { id: 'folder_' + Date.now(), name, hasHandle: !!state.pendingAdd.handle };
+            if (folder.hasHandle) await Store.putHandle(folder.id, state.pendingAdd.handle);
+            state.folders.push(folder);
+            Store.saveFolders(state.folders);
+            const add = state.pendingAdd;
+            state.pendingAdd = null;
+            closeFoldersModal();
+            beginFolder(folder.id);
+            if (add.handle) await loadFromHandle(folder.id, add.handle);
+            else loadFromFiles(folder.id, add.files);
+        });
+
+        $('importV2Btn').addEventListener('click', async () => {
+            let added = 0;
+            for (const f of Store.v2Folders()) {
+                if (state.folders.some(x => x.id === f.id)) continue;
+                let hasHandle = false;
+                if (f.hasDirectoryHandle && hasFSA) {
+                    const h = await Store.getHandle(f.id, 'AIPresetManager');
+                    if (h) { await Store.putHandle(f.id, h); hasHandle = true; }
+                }
+                state.folders.push({ id: f.id, name: f.name, hasHandle });
+                added++;
+            }
+            Store.saveFolders(state.folders);
+            renderFolderList();
+            renderFolderButtons();
+            toast(added ? `Imported ${added} folder${added > 1 ? 's' : ''} from v2` : 'All v2 folders are already here');
+        });
+
+        $('manageBtn').addEventListener('click', openFoldersModal);
+        $('rescanBtn').addEventListener('click', () => state.currentId && openFolder(state.currentId, { rescan: true }));
+        $('foldersOverlay').addEventListener('click', e => {
+            if (e.target === e.currentTarget || e.target.closest('[data-close]')) closeFoldersModal();
+        });
+
+        // ===================================================================
+        //  Detail panel
+        // ===================================================================
+        function openDetail(item) {
+            const idx = state.filtered.indexOf(item);
+            if (idx < 0) return;
+            state.detailIndex = idx;
+            $('detailOverlay').classList.remove('hidden');
+            renderDetail();
+        }
+
+        function closeDetail() {
+            if (state.detailIndex < 0) return;
+            state.detailIndex = -1;
+            state.detailToken++;
+            $('detailOverlay').classList.add('hidden');
+            const m = $('mediaPane');
+            const v = m.querySelector('video');
+            if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
+            m.innerHTML = '';
+            if (state.detailUrl) { URL.revokeObjectURL(state.detailUrl); state.detailUrl = null; }
+            state.detailFile = null;
+            const it = state.filtered[state.lastFocus];
+            if (state.needsRefilter) { state.needsRefilter = false; applyFilters(); }
+            if (it && it.el && it.el.isConnected) it.el.focus({ preventScroll: true });
+        }
+
+        function stepDetail(delta) {
+            const i = state.detailIndex + delta;
+            if (i < 0 || i >= state.filtered.length) return;
+            state.detailIndex = i;
+            renderDetail();
+        }
+
+        async function renderDetail() {
+            const item = state.filtered[state.detailIndex];
+            if (!item) return;
+            const token = ++state.detailToken;
+            $('exportMenu').classList.add('hidden');
+            state.lastFocus = state.detailIndex;
+            $('prevBtn').disabled = state.detailIndex <= 0;
+            $('nextBtn').disabled = state.detailIndex >= state.filtered.length - 1;
+            $('detailName').textContent = item.name;
+            item.el && item.el.scrollIntoView({ block: 'nearest' });
+
+            // Media
+            const pane = $('mediaPane');
+            const old = pane.querySelector('video');
+            if (old) { old.pause(); old.removeAttribute('src'); old.load(); }
+            pane.innerHTML = '';
+            if (state.detailUrl) { URL.revokeObjectURL(state.detailUrl); state.detailUrl = null; }
+            let file;
+            try { file = await getFile(item); } catch (e) {
+                pane.innerHTML = `<div class="placeholder">Couldn't open the file:<br>${esc(e.message)}</div>`;
+            }
+            if (token !== state.detailToken) return;
+            state.detailFile = file || null;
+            pane.draggable = false;
+            updateActionButtons(item);
+            if (file) {
+                state.detailUrl = URL.createObjectURL(file);
+                pane.draggable = true;
+                if (item.kind === 'video') {
+                    const v = document.createElement('video');
+                    v.controls = true; v.loop = true; v.autoplay = true; v.playsInline = true;
+                    v.onloadedmetadata = () => {
+                        if (blank(item.width) && v.videoWidth) { item.width = v.videoWidth; item.height = v.videoHeight; }
+                        if (blank(item.duration) && isFinite(v.duration)) item.duration = v.duration;
+                        if (token === state.detailToken) renderInfo(item);
+                    };
+                    v.onerror = () => { pane.innerHTML = '<div class="placeholder">🎬<br>This browser can\'t play this video format.</div>'; };
+                    v.src = state.detailUrl;
+                    pane.appendChild(v);
+                } else {
+                    const img = document.createElement('img');
+                    img.alt = item.name;
+                    img.draggable = false; // the pane handles the drag so we control what is dropped
+                    img.onload = () => {
+                        if (blank(item.width)) { item.width = img.naturalWidth; item.height = img.naturalHeight; if (token === state.detailToken) renderInfo(item); }
+                    };
+                    img.onerror = () => { pane.innerHTML = '<div class="placeholder">🖼️<br>This browser can\'t display this image.</div>'; };
+                    img.src = state.detailUrl;
+                    pane.appendChild(img);
+                }
+            }
+
+            renderInfo(item);
+            if (item.metaState !== 'done') {
+                await metaQueue.push(() => readMeta(item), true);
+                if (token === state.detailToken) renderInfo(item);
+            }
+        }
+
+        function refreshDetailIfPending() {
+            const item = state.filtered[state.detailIndex];
+            if (item && item.metaState === 'done' && $('infoPane').dataset.pending === '1') renderInfo(item);
+        }
+
+        function renderInfo(item) {
+            const pane = $('infoPane');
+            const tag = $('detailSource');
+            const meta = [item.kind === 'video' ? 'Video' : 'Image', fmtBytes(item.size), new Date(item.mtime).toLocaleString()];
+            $('detailMeta').textContent = meta.join(' · ');
+
+            if (item.metaState !== 'done') {
+                pane.dataset.pending = '1';
+                tag.className = 'source-tag';
+                tag.textContent = 'Reading…';
+                pane.innerHTML = '<div class="notice">Reading metadata…</div>';
+                return;
+            }
+            pane.dataset.pending = '0';
+            updateActionButtons(item);
+            const f = item.fields || {};
+            const cls = sourceClass(item);
+            tag.className = 'source-tag ' + cls;
+            tag.textContent = item.source === 'manual' ? 'Manual' : (item.source || 'No metadata');
+            state.copyMap = {};
+            let n = 0;
+            const copyBtn = text => {
+                if (blank(text)) return '<button class="copy-btn" disabled>Copy</button>';
+                const k = 'c' + (n++);
+                state.copyMap[k] = String(text);
+                return `<button class="copy-btn" data-copy="${k}">Copy</button>`;
+            };
+            const field = (label, value, extra = '') => `
+                <div class="field">
+                    <div class="field-head"><span class="lbl">${esc(label)}</span>${copyBtn(value)}</div>
+                    <div class="value ${extra} ${blank(value) ? 'empty-val' : ''}">${blank(value) ? '—' : esc(value)}</div>
+                </div>`;
+
+            const h = [];
+            const hasSc = !!item.sidecar;
+            const btn = cls === 'none' ? '<button class="btn small" id="infoEditBtn">✍️ Add Info</button>'
+                : cls === 'manual' ? '<button class="btn small secondary" id="infoEditBtn">✏️ Edit Info</button>'
+                : `<button class="btn small secondary" id="infoEditBtn">${hasSc ? '✏️ Edit notes' : '🗒️ Add notes / source link'}</button>`;
+            const hint = cls === 'manual' ? `Entered by hand — from ${esc(sidecarName(item))}` : '';
+            h.push(`<div class="info-actions">${btn}<span class="hint-text">${hint}</span></div>`);
+            if (item.sidecarError) {
+                h.push(`<div class="notice" style="margin-bottom:14px">⚠️ ${esc(sidecarName(item))} couldn't be read (${esc(item.sidecarError)}). Saving will replace it.</div>`);
+            }
+            if (cls === 'none') {
+                h.push(`<div class="notice" style="margin-bottom:14px">⚠️ No generation metadata was found in this file.
+                    It may have been stripped (e.g. a Civitai download or a re-saved copy). Use “Add Info” to record how it was made.</div>`);
+            }
+            if (f.source === 'ComfyUI workflow') {
+                h.push(`<div class="notice" style="margin-bottom:14px">This file only has the ComfyUI UI workflow (no API prompt),
+                    so the settings below can't be resolved. The workflow itself is in the raw section.</div>`);
+            }
+
+            h.push(field('Model', f.checkpoint, 'mono'));
+
+            const loras = f.loras || [];
+            const loraText = loras.map(l => `${l.name}: ${l.strength}`).join('\n');
+            h.push(`<div class="field"><div class="field-head"><span class="lbl">LoRAs (${loras.length})</span>${copyBtn(loraText)}</div>
+                ${loras.length ? `<div class="value loras">${loras.map(l =>
+                    `<div class="lrow"><span class="lname">${esc(l.name)}</span><span class="lstr">${esc(l.strength)}</span></div>`).join('')}</div>`
+                    : '<div class="value empty-val">—</div>'}</div>`);
+
+            h.push(field('Positive prompt', f.positive, 'prompt'));
+            h.push(field('Negative prompt', f.negative, 'prompt'));
+
+            h.push('<div class="params">');
+            h.push(field('Seed', f.seed, 'mono'));
+            h.push(field('Steps', f.steps));
+            h.push(field('CFG', f.cfg));
+            h.push(field('Sampler', f.samplerName));
+            h.push(field('Scheduler', f.scheduler));
+            h.push(field('Resolution', item.width ? `${item.width} × ${item.height}` : ''));
+            if (item.kind === 'video') {
+                h.push(field('Duration', item.duration ? fmtDur(item.duration) : ''));
+                h.push(field('Frames', item.frames ?? ''));
+                h.push(field('FPS' + (item.fpsSource === 'workflow' ? ' (workflow)' : ''), fmtFps(item.fps)));
+            }
+            h.push('</div>');
+
+            if (f.notes) h.push(field('Notes', f.notes));
+
+            if (item.sourceUrl || item.userNotes) {
+                h.push(`<div class="section-title">${cls === 'manual' ? 'Source & notes' : 'Your notes (sidecar)'}</div>`);
+                if (item.sourceUrl) {
+                    const safe = /^https?:\/\//i.test(item.sourceUrl);
+                    h.push(`<div class="field"><div class="field-head"><span class="lbl">Source URL</span>${copyBtn(item.sourceUrl)}</div>
+                        <div class="value">${safe ? `<a href="${esc(item.sourceUrl)}" target="_blank" rel="noopener noreferrer">${esc(item.sourceUrl)}</a>` : esc(item.sourceUrl)}</div></div>`);
+                }
+                if (item.userNotes) h.push(field('Notes', item.userNotes));
+            }
+
+            // Raw JSON
+            const info = item.info || {};
+            const raws = [];
+            const att = info.fromSidecar ? ' — attached by you' : '';
+            if (info.workflow) raws.push({ key: 'workflow', title: 'Workflow JSON (UI — drag-droppable into ComfyUI)' + att, count: info.workflow.nodes.length });
+            if (info.prompt) raws.push({ key: 'prompt', title: 'API prompt JSON' + att, count: Object.keys(info.prompt).length });
+            if (info.parameters && !info.prompt) raws.push({ key: 'parameters', title: 'Raw parameters text', count: null });
+            if (raws.length) {
+                h.push('<div class="section-title">Raw data</div>');
+                for (const r of raws) {
+                    h.push(`<details class="raw" data-raw="${r.key}"><summary><span>${esc(r.title)}${r.count !== null ? ` — ${r.count} nodes` : ''}</span>
+                        <button class="copy-btn" data-copy-raw="${r.key}">Copy</button></summary><pre></pre></details>`);
+                }
+            }
+
+            h.push('<div class="section-title">File</div>');
+            h.push(field('File name', item.name, 'mono'));
+            h.push(`<div class="field-head" style="margin-top:4px"><span class="lbl">Container: ${esc(info.container || '?')}${info.scanned && item.source ? ' (found by byte scan)' : ''}</span></div>`);
+
+            pane.innerHTML = h.join('');
+            pane.scrollTop = 0;
+        }
+
+        function rawText(item, key) {
+            const info = item.info || {};
+            if (key === 'workflow') return info.workflowText || JSON.stringify(info.workflow, null, 2);
+            if (key === 'prompt') return JSON.stringify(info.prompt, null, 2);
+            if (key === 'parameters') return info.parameters || '';
+            return '';
+        }
+
+        async function flash(btn, ok) {
+            btn.textContent = ok ? '✓ Copied' : 'Failed';
+            btn.classList.toggle('ok', ok);
+            setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 1200);
+        }
+
+        $('infoPane').addEventListener('click', async e => {
+            const b = e.target.closest('button[data-copy], button[data-copy-raw]');
+            if (!b) return;
+            e.preventDefault(); // don't toggle <details> when the copy button is in its summary
+            const item = state.filtered[state.detailIndex];
+            const text = b.dataset.copyRaw ? rawText(item, b.dataset.copyRaw) : state.copyMap[b.dataset.copy];
+            flash(b, await copyText(text));
+        });
+        $('infoPane').addEventListener('toggle', e => {
+            const d = e.target;
+            if (!d.matches || !d.matches('details.raw') || !d.open) return;
+            const pre = d.querySelector('pre');
+            if (!pre.textContent) pre.textContent = rawText(state.filtered[state.detailIndex], d.dataset.raw);
+        }, true);
+
+        $('prevBtn').addEventListener('click', () => stepDetail(-1));
+        $('nextBtn').addEventListener('click', () => stepDetail(1));
+        $('closeDetail').addEventListener('click', closeDetail);
+        $('copyMediaBtn').addEventListener('click', copyMedia);
+        $('saveCopyBtn').addEventListener('click', saveCopyAs);
+        $('dragHandle').addEventListener('dragstart', e => {
+            const item = state.filtered[state.detailIndex];
+            if (!item || !state.detailUrl) { e.preventDefault(); return; }
+            setDownloadDrag(e, item.name, mimeOf(state.detailFile, item.name), state.detailUrl);
+        });
+        $('mediaPane').addEventListener('dragstart', e => {
+            const item = state.filtered[state.detailIndex];
+            if (!item || !state.detailUrl) { e.preventDefault(); return; }
+            // Leave the video's control bar alone so scrubbing doesn't start a drag.
+            const v = $('mediaPane').querySelector('video');
+            if (v && e.clientY > v.getBoundingClientRect().bottom - 56) { e.preventDefault(); return; }
+            setDownloadDrag(e, item.name, mimeOf(state.detailFile, item.name), state.detailUrl);
+        });
+        $('detailOverlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeDetail(); });
+
+        // ===================================================================
+        //  Media actions: copy picture, drag-out, save copy, export workflow.
+        //  The original file is only ever read; nothing here opens it for writing.
+        // ===================================================================
+        const MIME = {
+            '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
+            '.bmp': 'image/bmp', '.avif': 'image/avif', '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm'
+        };
+        const mimeOf = (file, name) => (file && file.type) || MIME[extOf(name)] || 'application/octet-stream';
+        const stem = name => { const i = name.lastIndexOf('.'); return i > 0 ? name.slice(0, i) : name; };
+
+        function prepareDragUrl(item) {
+            if (item.dragUrl || item.dragPending) return;
+            item.dragPending = true;
+            getFile(item).then(f => { item.dragUrl = URL.createObjectURL(f); item.dragMime = mimeOf(f, item.name); })
+                .catch(e => console.warn('Drag prep failed', item.name, e))
+                .finally(() => { item.dragPending = false; });
+        }
+
+        // Chrome/Edge: 'DownloadURL' = "mime:filename:url" makes the drop target (desktop, Explorer) save the file.
+        function setDownloadDrag(e, name, mime, url) {
+            const dt = e.dataTransfer;
+            dt.effectAllowed = 'copy';
+            dt.setData('DownloadURL', `${mime}:${name.replace(/:/g, '_')}:${url}`);
+            dt.setData('text/plain', name);
+        }
+
+        function updateActionButtons(item) {
+            const video = item.kind === 'video';
+            const b = $('copyMediaBtn');
+            b.textContent = video ? '📋 Copy current frame' : '📋 Copy image';
+            b.title = video ? 'Pause where you want, then copy that frame as a PNG picture (Ctrl+C)' : 'Copy as a PNG picture (Ctrl+C)';
+            if (!$('exportMenu').classList.contains('hidden')) updateExportMenu(item);
+        }
+
+        // Draw what's on screen (the image, or the video's current frame) into a PNG blob.
+        async function mediaPngBlob() {
+            const el = $('mediaPane').querySelector('img, video');
+            if (!el) throw new Error('Nothing is loaded to copy.');
+            let w, h;
+            if (el.tagName === 'VIDEO') {
+                el.pause();
+                if (el.readyState < 2) { // frame still decoding: give it a moment
+                    await new Promise(res => {
+                        const done = () => { clearTimeout(t); el.removeEventListener('loadeddata', done); el.removeEventListener('seeked', done); res(); };
+                        const t = setTimeout(done, 3000);
+                        el.addEventListener('loadeddata', done); el.addEventListener('seeked', done);
+                    });
+                }
+                w = el.videoWidth; h = el.videoHeight;
+                if (!w || el.readyState < 2) throw new Error('The video frame isn\'t ready yet — try again in a second.');
+            } else {
+                w = el.naturalWidth; h = el.naturalHeight;
+                if (!el.complete || !w) return Promise.reject(new Error('The image hasn\'t finished loading.'));
+            }
+            const c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            c.getContext('2d').drawImage(el, 0, 0, w, h);
+            return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('PNG encoding failed.')), 'image/png'));
+        }
+
+        async function copyMedia() {
+            const item = state.filtered[state.detailIndex];
+            if (!item) return;
+            if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
+                toast('This browser can\'t put pictures on the clipboard. Use “Save copy as…” or drag the file out instead.', 'error');
+                return;
+            }
+            const what = item.kind === 'video' ? 'Frame' : 'Image';
+            try {
+                const blob = mediaPngBlob(); // start now, while the click still counts as a user action
+                try {
+                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                } catch (e) {
+                    // Some engines want a Blob rather than a Promise<Blob>
+                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': await blob })]);
+                }
+                toast(`${what} copied as PNG — paste into Paint, PSP, etc. (To put a file on the desktop, drag it out instead.)`, 'ok', 4000);
+            } catch (e) {
+                console.warn('Copy failed', e);
+                toast(`Copy failed: ${e.message || e.name}`, 'error');
+            }
+        }
+
+        // Download fallback (Firefox, or no File System Access API).
+        function downloadBlob(blob, name) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = name;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+        }
+
+        // Ask where to save. Returns where it went, or null if the user cancelled.
+        async function saveWithPicker(blob, name, mime) {
+            if (!('showSaveFilePicker' in window)) { downloadBlob(blob, name); return 'Downloads'; }
+            const ext = extOf(name);
+            let handle;
+            try {
+                handle = await window.showSaveFilePicker({
+                    suggestedName: name, id: 'aiinfo-v3-save',
+                    types: ext ? [{ description: ext.slice(1).toUpperCase() + ' file', accept: { [mime]: [ext] } }] : undefined
+                });
+            } catch (e) {
+                if (e.name === 'AbortError') return null;
+                throw e;
+            }
+            const w = await handle.createWritable();
+            await w.write(blob);
+            await w.close();
+            return handle.name;
+        }
+
+        async function saveCopyAs() {
+            const item = state.filtered[state.detailIndex];
+            if (!item) return;
+            try {
+                const file = state.detailFile || await getFile(item);
+                const where = await saveWithPicker(file, item.name, mimeOf(file, item.name));
+                if (where) toast(`Saved a copy → ${where}`, 'ok');
+            } catch (e) {
+                console.warn('Save copy failed', e);
+                toast(`Save failed: ${e.message || e.name}`, 'error');
+            }
+        }
+
+        // NEW files go into <folder>/exports/ (never overwriting); otherwise a save picker / download.
+        async function exportsDir() {
+            if (!state.dirHandle) return null;
+            if (!(await ensurePermission(state.dirHandle, 'readwrite'))) return null;
+            return state.dirHandle.getDirectoryHandle('exports', { create: true });
+        }
+        async function uniqueName(dir, name) {
+            const s = stem(name), ext = extOf(name);
+            for (let i = 0; i < 1000; i++) {
+                const n = i ? `${s} (${i})${ext}` : name;
+                try { await dir.getFileHandle(n); } catch (e) { if (e.name === 'NotFoundError') return n; throw e; }
+            }
+            throw new Error('Too many files with the same name in exports/');
+        }
+        async function saveExport(blob, name, mime) {
+            let dir = null;
+            try { dir = await exportsDir(); } catch (e) { console.warn('exports/ not writable', e); }
+            if (dir) {
+                const n = await uniqueName(dir, name);
+                const fh = await dir.getFileHandle(n, { create: true });
+                const w = await fh.createWritable();
+                await w.write(blob);
+                await w.close();
+                return `exports/${n}`;
+            }
+            return saveWithPicker(blob, name, mime);
+        }
+
+        async function exportWorkflow() {
+            const item = state.filtered[state.detailIndex];
+            const wf = item && item.metaState === 'done' && AIMeta.workflowExport(item.info);
+            if (!wf) { toast('No ComfyUI workflow in this file.', 'error'); return; }
+            try {
+                const blob = new Blob([wf.text], { type: 'application/json' });
+                const where = await saveExport(blob, `${stem(item.name)}_workflow.json`, 'application/json');
+                if (where) toast(`Workflow saved → ${where} (drop it onto ComfyUI to load)`, 'ok', 4000);
+            } catch (e) {
+                console.warn('Export failed', e);
+                toast(`Export failed: ${e.message || e.name}`, 'error');
+            }
+        }
+
+        // ===================================================================
+        //  Exports: settings, clean copy, PNG with info. All write NEW files (exports/ or picker / download).
+        // ===================================================================
+        const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const currentItem = () => state.filtered[state.detailIndex];
+
+        // ---- Verification: our reader finds nothing, and the browser can still decode / play it ----
+        function probeVideo(blob) {
+            return new Promise(resolve => {
+                const url = URL.createObjectURL(blob);
+                const v = document.createElement('video');
+                v.muted = true; v.preload = 'auto';
+                let done = false;
+                const finish = r => { if (done) return; done = true; clearTimeout(t); v.removeAttribute('src'); v.load(); URL.revokeObjectURL(url); resolve(r); };
+                const t = setTimeout(() => finish({ ok: false, reason: 'timed out loading' }), 20000);
+                v.onerror = () => finish({ ok: false, reason: 'the browser could not load it' });
+                v.onloadeddata = () => {
+                    const d = v.duration;
+                    if (!isFinite(d) || d <= 0.1) return finish({ ok: true, width: v.videoWidth, height: v.videoHeight, duration: d });
+                    v.onseeked = () => finish({ ok: true, width: v.videoWidth, height: v.videoHeight, duration: d });
+                    v.currentTime = d / 2; // decoding mid-file proves more than the first frame
+                };
+                v.src = url;
+            });
+        }
+        async function probeImage(blob) {
+            try { const bmp = await createImageBitmap(blob); const r = { ok: true, width: bmp.width, height: bmp.height }; bmp.close(); return r; }
+            catch (e) { return { ok: false, reason: 'the browser could not decode it' }; }
+        }
+        async function verifyPlayable(outBlob, origFile, kind) {
+            const probe = kind === 'video' ? probeVideo : probeImage;
+            const out = await probe(outBlob);
+            if (!out.ok) {
+                const orig = await probe(origFile);
+                return orig.ok ? out : { ok: null, reason: 'this browser can\'t play the original either, so playback wasn\'t checked' };
+            }
+            const orig = await probe(origFile);
+            if (orig.ok && (orig.width !== out.width || orig.height !== out.height)) return { ok: false, reason: `size changed (${orig.width}×${orig.height} → ${out.width}×${out.height})` };
+            if (orig.ok && kind === 'video' && isFinite(orig.duration) && Math.abs(orig.duration - out.duration) > 0.1) return { ok: false, reason: 'duration changed' };
+            return { ok: true };
+        }
+        async function readerFinds(blob, name) {
+            const info = await AIMeta.read(new File([blob], name, { type: blob.type }));
+            return { info, fields: AIMeta.extract(info), any: !!(info.prompt || info.workflow || info.parameters || info.swarm) };
+        }
+
+        function fileStatus(container) {
+            return Clean.SUPPORTED.includes(container) ? null : 'Clean copies work for PNG, JPEG, WebP, MP4/MOV and WebM.';
+        }
+
+        // ---- Settings (.json + .txt) ----
+        function settingsData(item) {
+            const f = item.fields || {};
+            const d = {
+                file: item.name, source: item.source === 'manual' ? 'manual (sidecar)' : item.source,
+                exported: new Date().toISOString(),
+                model: f.checkpoint, loras: f.loras && f.loras.length ? f.loras : undefined,
+                positive: f.positive, negative: f.negative,
+                seed: f.seed, steps: f.steps, cfg: f.cfg, sampler: f.samplerName, scheduler: f.scheduler,
+                width: item.width, height: item.height
+            };
+            if (item.kind === 'video') Object.assign(d, { duration: item.duration ? Number(item.duration.toFixed(3)) : undefined, frames: item.frames, fps: item.fps ? Number(fmtFps(item.fps)) : undefined });
+            Object.assign(d, { otherInfo: f.notes, sourceUrl: item.sourceUrl, notes: item.userNotes });
+            for (const k of Object.keys(d)) if (blank(d[k])) delete d[k];
+            return d;
+        }
+        function settingsText(d) {
+            const L = [], line = (k, v) => { if (!blank(v)) L.push(`${k}: ${v}`); };
+            line('File', d.file); line('Source', d.source); line('Model', d.model);
+            if (d.loras) { L.push('LoRAs:'); for (const l of d.loras) L.push(`  - ${l.name} (${l.strength})`); }
+            line('Seed', d.seed); line('Steps', d.steps); line('CFG', d.cfg); line('Sampler', d.sampler); line('Scheduler', d.scheduler);
+            if (d.width) line('Resolution', `${d.width} x ${d.height}`);
+            line('Duration', d.duration ? d.duration + ' s' : ''); line('Frames', d.frames); line('FPS', d.fps);
+            if (d.positive) L.push('', 'Positive prompt:', d.positive);
+            if (d.negative) L.push('', 'Negative prompt:', d.negative);
+            if (d.otherInfo) L.push('', d.otherInfo);
+            if (d.sourceUrl || d.notes) L.push('');
+            line('Source URL', d.sourceUrl);
+            if (d.notes) L.push('Notes:', d.notes);
+            L.push('', `Exported ${new Date(d.exported).toLocaleString()} by AI Info Reader v3`);
+            return L.join('\r\n') + '\r\n';
+        }
+        async function exportSettings(item) {
+            const d = settingsData(item), base = stem(item.name);
+            const a = await saveExport(new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' }), `${base}_settings.json`, 'application/json');
+            if (!a) return;
+            const b = await saveExport(new Blob([settingsText(d)], { type: 'text/plain' }), `${base}_settings.txt`, 'text/plain');
+            toast(`Settings saved → ${a}${b ? ' and ' + b : ''}`, 'ok', 4000);
+        }
+
+        // ---- Clean copy ----
+        async function exportClean(item) {
+            const file = await getFile(item);
+            const container = await Clean.detect(file);
+            if (!container) throw new Error(fileStatus(null));
+            toast('Building clean copy…', '', 1500);
+            const r = await Clean.strip[container](file);
+            const outName = `${stem(item.name)}_clean${extOf(item.name)}`;
+            const found = await readerFinds(r.blob, outName);
+            if (found.any) throw new Error('Metadata was still found in the stripped copy, so it was not saved.');
+            const play = await verifyPlayable(r.blob, file, item.kind);
+            if (play.ok === false) throw new Error(`The stripped copy failed its check (${play.reason}), so it was not saved.`);
+            const where = await saveExport(r.blob, outName, mimeOf(file, item.name));
+            if (!where) return;
+            const what = r.removed.length ? `removed ${r.removed.join(', ')}` : 'nothing to remove';
+            const check = play.ok ? (item.kind === 'video' ? '✓ plays' : '✓ opens') : `⚠ ${play.reason}`;
+            toast(`Clean copy → ${where} · ${what} · ✓ no metadata · ${check}${r.warnings.length ? ' · ⚠ ' + r.warnings.join(' ') : ''}`, r.warnings.length || !play.ok ? '' : 'ok', 7000);
+        }
+
+        // ---- PNG with info embedded (A1111-style "parameters") ----
+        function a1111Text(item) {
+            const f = item.fields || {};
+            let pos = (f.positive || '').trim();
+            for (const l of f.loras || []) {
+                if (!new RegExp(`<lora:${escRe(l.name)}:`, 'i').test(pos)) pos += `${pos ? ' ' : ''}<lora:${l.name}:${l.strength}>`;
+            }
+            const q = v => /[,:"\r\n]/.test(String(v)) ? JSON.stringify(String(v)) : String(v);
+            const kv = [];
+            if (!blank(f.steps)) kv.push(`Steps: ${f.steps}`);
+            if (f.samplerName) kv.push(`Sampler: ${q(f.samplerName)}`);
+            if (f.scheduler) kv.push(`Schedule type: ${q(f.scheduler)}`);
+            if (!blank(f.cfg)) kv.push(`CFG scale: ${f.cfg}`);
+            if (!blank(f.seed)) kv.push(`Seed: ${f.seed}`);
+            if (item.width) kv.push(`Size: ${item.width}x${item.height}`);
+            if (f.checkpoint) kv.push(`Model: ${q(f.checkpoint)}`);
+            if (item.sourceUrl) kv.push(`Source URL: ${JSON.stringify(item.sourceUrl)}`);
+            if (item.userNotes) kv.push(`Notes: ${JSON.stringify(item.userNotes)}`);
+            const lines = [pos];
+            if (f.negative) lines.push(`Negative prompt: ${f.negative}`);
+            if (kv.length) lines.push(kv.join(', '));
+            return lines.join('\n');
+        }
+        async function exportEmbedded(item) {
+            const file = await getFile(item);
+            if (await Clean.detect(file) !== 'png') throw new Error('Embedding info works for PNG files only (for now).');
+            const text = a1111Text(item);
+            const r = await Clean.pngWithText(file, 'parameters', text);
+            const outName = `${stem(item.name)}_with_info.png`;
+            // Read it back with our own reader and compare.
+            const back = (await readerFinds(r.blob, outName)).fields;
+            const f = item.fields, diffs = [];
+            const same = (a, b) => String(a ?? '').trim() === String(b ?? '').trim();
+            for (const [k, label] of [['checkpoint', 'model'], ['negative', 'negative'], ['seed', 'seed'], ['steps', 'steps'], ['cfg', 'CFG'], ['samplerName', 'sampler'], ['scheduler', 'scheduler']]) {
+                if (!same(f[k], back[k])) diffs.push(label);
+            }
+            const names = l => (l || []).map(x => `${x.name}:${Number(x.strength)}`).sort().join('|');
+            if (names(f.loras) !== names(back.loras)) diffs.push('LoRAs');
+            if (back.source !== 'A1111') throw new Error('The written info could not be read back, so the file was not saved.');
+            const play = await verifyPlayable(r.blob, file, 'image');
+            if (play.ok === false) throw new Error(`The new PNG failed its check (${play.reason}), so it was not saved.`);
+            const where = await saveExport(r.blob, outName, 'image/png');
+            if (!where) return;
+            const warn = [];
+            if (diffs.length) warn.push(`these didn't read back exactly: ${diffs.join(', ')}`);
+            if (blank(f.steps)) warn.push('no Steps value, so some A1111 tools may not parse the settings line');
+            toast(`PNG with info → ${where} · ${r.chunkType} “parameters” chunk${warn.length ? ' · ⚠ ' + warn.join('; ') : ' · ✓ reads back correctly'}`, warn.length ? '' : 'ok', 7000);
+        }
+
+        // ---- Export menu ----
+        function exportOptions(item) {
+            const done = item.metaState === 'done';
+            const container = item.embInfo && item.embInfo.container;
+            const wf = done && AIMeta.workflowExport(item.info);
+            const isPng = container === 'png';
+            return {
+                workflow: wf ? { ok: true, sub: `${wf.kind === 'workflow' ? 'UI workflow' : 'API prompt'}, ${wf.nodeCount} nodes — drop onto ComfyUI` } : { ok: false, sub: 'No ComfyUI workflow in this file' },
+                settings: done && item.source ? { ok: true, sub: `${stem(item.name)}_settings.json + .txt` } : { ok: false, sub: 'No settings to export' },
+                clean: !done ? { ok: false, sub: 'Still reading…' } : fileStatus(container) ? { ok: false, sub: fileStatus(container) } : { ok: true, sub: 'Metadata removed, no re-encoding' },
+                embed: !isPng ? { ok: false, sub: 'PNG files only (for now)' }
+                    : item.source !== 'manual' ? { ok: false, sub: item.embSource ? 'This file already has embedded metadata' : 'Add info first (✍️ Add Info)' }
+                    : { ok: true, sub: 'Copy with your info as A1111 “parameters”' }
+            };
+        }
+        function updateExportMenu(item) {
+            const opts = exportOptions(item);
+            for (const btn of $('exportMenu').querySelectorAll('[data-export]')) {
+                const o = opts[btn.dataset.export];
+                btn.disabled = !o.ok;
+                btn.querySelector('small').textContent = o.sub;
+            }
+        }
+        function toggleExportMenu(open) {
+            const menu = $('exportMenu');
+            const show = open ?? menu.classList.contains('hidden');
+            if (show) { const item = currentItem(); if (!item) return; updateExportMenu(item); }
+            menu.classList.toggle('hidden', !show);
+            $('exportBtn').setAttribute('aria-expanded', String(show));
+            if (show) { const first = menu.querySelector('button:not(:disabled)'); if (first) first.focus(); }
+        }
+        let exportBusy = false;
+        async function runExport(kind) {
+            const item = currentItem();
+            toggleExportMenu(false);
+            if (!item || exportBusy) return;
+            exportBusy = true;
+            const btn = $('exportBtn'), label = btn.textContent;
+            btn.disabled = true; btn.textContent = '⏳ Exporting…';
+            try {
+                if (kind === 'workflow') await exportWorkflow();
+                else if (kind === 'settings') await exportSettings(item);
+                else if (kind === 'clean') await exportClean(item);
+                else if (kind === 'embed') await exportEmbedded(item);
+            } catch (e) {
+                console.warn('Export failed', e);
+                toast(`Export failed: ${e.message || e.name}`, 'error', 7000);
+            } finally {
+                exportBusy = false;
+                btn.disabled = false; btn.textContent = label;
+            }
+        }
+        $('exportBtn').addEventListener('click', e => { e.stopPropagation(); toggleExportMenu(); });
+        $('exportMenu').addEventListener('click', e => {
+            e.stopPropagation();
+            const b = e.target.closest('button[data-export]');
+            if (b && !b.disabled) runExport(b.dataset.export);
+        });
+        document.addEventListener('click', () => { if (!$('exportMenu').classList.contains('hidden')) toggleExportMenu(false); });
+
+        // ===================================================================
+        //  Manual info sidecars: <filename>.info.json beside the media file.
+        //  Only the sidecar is ever written or removed; the media file is never opened for writing.
+        // ===================================================================
+        const SIDECAR_EXT = '.info.json';
+        const sidecarName = item => item.name + SIDECAR_EXT;
+        const GEN_KEYS = ['model', 'positive', 'negative', 'seed', 'steps', 'cfg', 'sampler', 'scheduler'];
+
+        const isGraph = o => !!o && typeof o === 'object' && !Array.isArray(o) && Object.values(o).length > 0
+            && Object.values(o).every(n => n && typeof n === 'object' && typeof n.class_type === 'string');
+        const isUiWorkflow = o => !!o && typeof o === 'object' && Array.isArray(o.nodes);
+
+        async function readSidecar(item) {
+            item.sidecar = null;
+            item.sidecarError = null;
+            const ref = item.sidecarRef;
+            if (!ref) return;
+            try {
+                const file = ref.file || await ref.handle.getFile();
+                const obj = JSON.parse(await file.text());
+                if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('not a JSON object');
+                item.sidecar = obj;
+            } catch (e) {
+                console.warn('Bad sidecar', sidecarName(item), e);
+                item.sidecarError = e.message;
+            }
+        }
+
+        function sidecarFields(sc) {
+            const sampler = sc.sampler || '', sched = sc.scheduler || '';
+            return {
+                source: 'manual',
+                checkpoint: sc.model || '', positive: sc.positive || '', negative: sc.negative || '',
+                loras: Array.isArray(sc.loras) ? sc.loras.filter(l => l && l.name).map(l => ({ name: String(l.name), strength: blank(l.strength) ? 1 : l.strength })) : [],
+                seed: sc.seed ?? '', steps: sc.steps ?? '', cfg: sc.cfg ?? '',
+                samplerName: sampler, scheduler: sched,
+                sampler: sampler && sched ? `${sampler} (${sched})` : (sampler || sched), notes: ''
+            };
+        }
+
+        // Combine embedded metadata (always wins) with the sidecar (adds notes / source URL,
+        // and supplies everything when the file has no embedded metadata).
+        function applySidecar(item) {
+            const sc = item.sidecar;
+            const info = Object.assign({}, item.embInfo || {});
+            delete info.fromSidecar;
+            if (item.embSource) {
+                item.fields = item.embFields;
+                item.source = item.embSource;
+            } else if (sc) {
+                item.fields = sidecarFields(sc);
+                item.source = 'manual';
+                if (sc.workflow && typeof sc.workflow === 'object') {
+                    if (isUiWorkflow(sc.workflow)) { info.workflow = sc.workflow; info.workflowText = null; }
+                    else if (isGraph(sc.workflow)) info.prompt = sc.workflow;
+                    info.fromSidecar = true;
+                }
+            } else {
+                item.fields = item.embFields || AIMeta.extract(null);
+                item.source = null;
+            }
+            item.info = info;
+            item.userNotes = sc && typeof sc.notes === 'string' ? sc.notes : '';
+            item.sourceUrl = sc && typeof sc.sourceUrl === 'string' ? sc.sourceUrl : '';
+            const f = item.fields;
+            item.haystack = [item.name, f.positive, f.negative, f.checkpoint, ...(f.loras || []).map(l => l.name),
+                item.userNotes, item.sourceUrl].join('\n').toLowerCase();
+        }
+
+        async function writeSidecar(item, data) {
+            const name = sidecarName(item);
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            if (state.dirHandle) {
+                if (!(await ensurePermission(state.dirHandle, 'readwrite'))) throw new Error('Permission to write in this folder was not granted.');
+                const fh = await state.dirHandle.getFileHandle(name, { create: true });
+                const w = await fh.createWritable();
+                await w.write(blob);
+                await w.close();
+                item.sidecarRef = { handle: fh };
+                return { saved: true, where: name };
+            }
+            // No folder write access (Firefox): download it for the user to move beside the file.
+            downloadBlob(blob, name);
+            item.sidecarRef = { file: new File([blob], name) };
+            return { saved: false, where: name };
+        }
+
+        async function deleteSidecar(item) {
+            if (!state.dirHandle) throw new Error('This browser can\'t delete files — remove ' + sidecarName(item) + ' by hand.');
+            if (!(await ensurePermission(state.dirHandle, 'readwrite'))) throw new Error('Permission to write in this folder was not granted.');
+            try { await state.dirHandle.removeEntry(sidecarName(item)); }
+            catch (e) { if (e.name !== 'NotFoundError') throw e; }
+            item.sidecarRef = null;
+        }
+
+        function refreshItem(item) {
+            applySidecar(item);
+            updateCard(item);
+            rebuildModelOptions();
+            onScanProgress();
+            if (state.filtered[state.detailIndex] === item) renderInfo(item);
+            if (filtersActive()) state.needsRefilter = true;
+        }
+
+        // ---------- The Add / Edit form ----------
+        const form = {
+            item: null, notesOnly: false, workflow: null, workflowName: '',
+            el: id => $(id)
+        };
+
+        function loraRow(name = '', strength = 1) {
+            const row = document.createElement('div');
+            row.className = 'lora-edit';
+            row.innerHTML = `<input type="text" class="ln" placeholder="LoRA name"><input type="text" class="ls" inputmode="decimal" title="Strength">
+                <button type="button" class="icon-btn" title="Remove">✕</button>`;
+            row.querySelector('.ln').value = name;
+            row.querySelector('.ls').value = strength;
+            row.querySelector('button').addEventListener('click', () => row.remove());
+            $('fLoras').appendChild(row);
+            return row;
+        }
+
+        function setFormValues(v) {
+            const set = (id, val) => { if (!blank(val)) $(id).value = val; };
+            set('fModel', v.checkpoint ?? v.model);
+            set('fPositive', v.positive); set('fNegative', v.negative);
+            set('fSeed', v.seed); set('fSteps', v.steps); set('fCfg', v.cfg);
+            set('fSampler', v.samplerName ?? v.sampler); set('fScheduler', v.scheduler);
+            if (Array.isArray(v.loras) && v.loras.length) {
+                $('fLoras').innerHTML = '';
+                for (const l of v.loras) loraRow(l.name, l.strength ?? 1);
+            }
+        }
+
+        function showWorkflowStatus() {
+            const wf = form.workflow;
+            $('fWfStatus').textContent = wf
+                ? `Attached: ${form.workflowName || 'workflow'} — ${isUiWorkflow(wf) ? wf.nodes.length + ' nodes (UI workflow)' : Object.keys(wf).length + ' nodes (API prompt)'}`
+                : 'No workflow attached.';
+            $('fWfRemove').classList.toggle('hidden', !wf);
+            $('fWfFill').classList.toggle('hidden', !(wf && isGraph(wf)));
+        }
+
+        function openInfoForm(item) {
+            form.item = item;
+            form.notesOnly = !!item.embSource;
+            const sc = item.sidecar || {};
+            for (const id of ['fModel', 'fPositive', 'fNegative', 'fSeed', 'fSteps', 'fCfg', 'fSampler', 'fScheduler', 'fSourceUrl', 'fNotes', 'fPaste']) $(id).value = '';
+            $('fLoras').innerHTML = '';
+            if (!form.notesOnly) setFormValues(sc);
+            $('fSourceUrl').value = sc.sourceUrl || '';
+            $('fNotes').value = sc.notes || '';
+            form.workflow = !form.notesOnly && sc.workflow && typeof sc.workflow === 'object' ? sc.workflow : null;
+            form.workflowName = sc.workflowName || '';
+            showWorkflowStatus();
+            $('fPasteBox').open = false;
+
+            const editing = !!item.sidecar;
+            $('infoFormTitle').textContent = form.notesOnly
+                ? (editing ? '✏️ Edit notes' : '🗒️ Add notes')
+                : (editing ? '✏️ Edit info' : '✍️ Add info');
+            $('infoFormFile').textContent = item.name;
+            for (const el of document.querySelectorAll('#infoOverlay .gen-only')) el.classList.toggle('hidden', form.notesOnly);
+            $('fNotesOnlyHint').classList.toggle('hidden', !form.notesOnly);
+            $('fDelete').classList.toggle('hidden', !editing);
+            $('fWhere').textContent = state.dirHandle
+                ? `Saved as ${sidecarName(item)} next to the file. The file itself is not changed.`
+                : `This browser can't write into the folder: ${sidecarName(item)} will download — move it next to the file so it loads next time.`;
+            $('infoOverlay').classList.remove('hidden');
+            (form.notesOnly ? $('fSourceUrl') : $('fModel')).focus();
+        }
+
+        function closeInfoForm() {
+            $('infoOverlay').classList.add('hidden');
+            form.item = null;
+            form.workflow = null;
+        }
+
+        const numOrText = v => { v = v.trim(); return v !== '' && isFinite(Number(v)) && !/^-?\d{16,}$/.test(v) ? Number(v) : v; };
+
+        function collectForm() {
+            const prev = form.item.sidecar || {};
+            const now = new Date().toISOString();
+            const data = { format: 'aiinfo-sidecar', version: 1, file: form.item.name, created: prev.created || now, updated: now };
+            if (!form.notesOnly) {
+                Object.assign(data, {
+                    model: $('fModel').value.trim(),
+                    loras: [...$('fLoras').querySelectorAll('.lora-edit')]
+                        .map(r => ({ name: r.querySelector('.ln').value.trim(), strength: numOrText(r.querySelector('.ls').value || '1') }))
+                        .filter(l => l.name),
+                    positive: $('fPositive').value.trim(),
+                    negative: $('fNegative').value.trim(),
+                    seed: $('fSeed').value.trim(), // kept as text: seeds can exceed JS number precision
+                    steps: numOrText($('fSteps').value),
+                    cfg: numOrText($('fCfg').value),
+                    sampler: $('fSampler').value.trim(),
+                    scheduler: $('fScheduler').value.trim()
+                });
+            } else {
+                // Keep anything an earlier full sidecar held; embedded data still wins on display.
+                for (const k of [...GEN_KEYS, 'loras', 'workflow', 'workflowName']) if (prev[k] !== undefined) data[k] = prev[k];
+            }
+            data.sourceUrl = $('fSourceUrl').value.trim();
+            data.notes = $('fNotes').value.trim();
+            if (!form.notesOnly && form.workflow) { data.workflow = form.workflow; data.workflowName = form.workflowName; }
+            return data;
+        }
+
+        async function saveInfoForm() {
+            const item = form.item;
+            if (!item) return;
+            const url = $('fSourceUrl').value.trim();
+            if (url && !/^https?:\/\//i.test(url)) { toast('Source URL should start with http:// or https://', 'error'); $('fSourceUrl').focus(); return; }
+            const data = collectForm();
+            const btn = $('fSave');
+            btn.disabled = true;
+            try {
+                const r = await writeSidecar(item, data);
+                item.sidecar = data;
+                item.sidecarError = null;
+                closeInfoForm();
+                refreshItem(item);
+                toast(r.saved ? `Saved ${r.where}` : `Downloaded ${r.where} — move it next to the file`, r.saved ? 'ok' : '', r.saved ? 2600 : 6000);
+            } catch (e) {
+                console.warn('Sidecar save failed', e);
+                toast(`Couldn't save: ${e.message || e.name}`, 'error');
+            } finally { btn.disabled = false; }
+        }
+
+        async function deleteInfoForm() {
+            const item = form.item;
+            if (!item || !confirm(`Delete ${sidecarName(item)}?\nOnly the info file is removed; the media file is not touched.`)) return;
+            try {
+                await deleteSidecar(item);
+                item.sidecar = null;
+                closeInfoForm();
+                refreshItem(item);
+                toast('Info removed', 'ok');
+            } catch (e) { toast(e.message || e.name, 'error'); }
+        }
+
+        // Paste box: Civitai / A1111 "generation data" text, or ComfyUI JSON.
+        function fillFromPaste() {
+            const text = $('fPaste').value.trim();
+            if (!text) return;
+            let obj;
+            if (/^[{[]/.test(text)) { try { obj = JSON.parse(text); } catch (e) { obj = undefined; } }
+            if (obj && (isGraph(obj) || isUiWorkflow(obj))) {
+                form.workflow = obj;
+                form.workflowName = 'pasted JSON';
+                showWorkflowStatus();
+                if (isGraph(obj)) setFormValues(AIMeta.extract({ prompt: obj }));
+                toast(isGraph(obj) ? 'Filled from the pasted API prompt (also attached as workflow)' : 'Attached the pasted UI workflow', 'ok');
+            } else {
+                const f = AIMeta.extract({ parameters: text });
+                setFormValues(f);
+                toast('Filled from the pasted generation data', 'ok');
+            }
+            $('fPasteBox').open = false;
+        }
+
+        $('fAddLora').addEventListener('click', () => loraRow().querySelector('.ln').focus());
+        $('fPasteFill').addEventListener('click', fillFromPaste);
+        $('fWfPick').addEventListener('click', () => $('fWfInput').click());
+        $('fWfInput').addEventListener('change', async e => {
+            const file = e.target.files[0];
+            e.target.value = '';
+            if (!file) return;
+            try {
+                const obj = JSON.parse(await file.text());
+                if (!isGraph(obj) && !isUiWorkflow(obj)) throw new Error('This doesn\'t look like a ComfyUI workflow.');
+                form.workflow = obj;
+                form.workflowName = file.name;
+                showWorkflowStatus();
+            } catch (err) { toast(`Couldn't attach: ${err.message}`, 'error'); }
+        });
+        $('fWfRemove').addEventListener('click', () => { form.workflow = null; form.workflowName = ''; showWorkflowStatus(); });
+        $('fWfFill').addEventListener('click', () => { if (form.workflow && isGraph(form.workflow)) { setFormValues(AIMeta.extract({ prompt: form.workflow })); toast('Filled from the workflow', 'ok'); } });
+        $('fSave').addEventListener('click', saveInfoForm);
+        $('fDelete').addEventListener('click', deleteInfoForm);
+        $('infoOverlay').addEventListener('click', e => { if (e.target === e.currentTarget || e.target.closest('[data-close]')) closeInfoForm(); });
+        $('infoPane').addEventListener('click', e => {
+            if (e.target.closest('#infoEditBtn')) openInfoForm(state.filtered[state.detailIndex]);
+        });
+
+        // ===================================================================
+        //  Wiring
+        // ===================================================================
+        ui.grid.addEventListener('click', e => {
+            const card = e.target.closest('.card');
+            if (card) openDetail(itemById.get(Number(card.dataset.id)));
+        });
+        ui.grid.addEventListener('keydown', e => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            const card = e.target.closest('.card');
+            if (card) { e.preventDefault(); openDetail(itemById.get(Number(card.dataset.id))); }
+        });
+
+        let searchTimer = null;
+        ui.search.addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(applyFilters, 150); });
+        for (const s of [ui.type, ui.meta, ui.model]) s.addEventListener('change', applyFilters);
+        ui.sort.addEventListener('change', () => { try { localStorage.setItem('aiInfoReaderV3Sort', ui.sort.value); } catch (e) { } applyFilters(); });
+        ui.size.addEventListener('input', () => {
+            document.documentElement.style.setProperty('--thumb', ui.size.value + 'px');
+            try { localStorage.setItem('aiInfoReaderV3Thumb', ui.size.value); } catch (e) { }
+        });
+
+        document.addEventListener('keydown', e => {
+            if (!$('infoOverlay').classList.contains('hidden')) {
+                if (e.key === 'Escape') closeInfoForm();
+                else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); saveInfoForm(); }
+                return;
+            }
+            if (!$('detailOverlay').classList.contains('hidden')) {
+                if (e.key === 'Escape') { if (!$('exportMenu').classList.contains('hidden')) toggleExportMenu(false); else closeDetail(); }
+                else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && !String(window.getSelection())
+                    && !/INPUT|TEXTAREA/.test(e.target.tagName)) { e.preventDefault(); copyMedia(); }
+                else if (e.key === 'ArrowLeft' && !/INPUT|TEXTAREA/.test(e.target.tagName)) stepDetail(-1);
+                else if (e.key === 'ArrowRight' && !/INPUT|TEXTAREA/.test(e.target.tagName)) stepDetail(1);
+            } else if (!$('foldersOverlay').classList.contains('hidden') && e.key === 'Escape') closeFoldersModal();
+            else if (e.key === '/' && document.activeElement !== ui.search) { e.preventDefault(); ui.search.focus(); }
+        });
+
+        (function init() {
+            try {
+                const t = localStorage.getItem('aiInfoReaderV3Thumb');
+                if (t) { ui.size.value = t; document.documentElement.style.setProperty('--thumb', t + 'px'); }
+                const s = localStorage.getItem('aiInfoReaderV3Sort');
+                if (s) ui.sort.value = s;
+            } catch (e) { }
+            renderFolderButtons();
+            ui.status.textContent = hasFSA
+                ? 'Ready — folder access is remembered between sessions (Chrome/Edge).'
+                : 'Ready — this browser can\'t remember folders, so you\'ll pick the folder each session.';
+            if (!state.folders.length && Store.v2Folders().length) {
+                ui.status.textContent += ' Tip: Manage Folders → “Import saved folders from v2”.';
+            }
+        })();
+    </script>
+</body>
+</html>
